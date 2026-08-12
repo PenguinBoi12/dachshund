@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="card span-3">
-  <h2 class="card-title">Welcome!</h2>
-  <p class="card-body">
-    This is your Dachshund dashboard. One day, it will do something useful.
-  </p>
+{% for widget in widgets %}
+<section class="card span-{{ widget.size }}"
+         data-widget="{{ widget.name }}"
+         data-type="{{ widget.type }}"
+         data-payload="{{ widget.payload }}">
+  <h2 class="card-title">{{ widget.label }}</h2>
+  <div class="card-chart">{{ widget.payload }}</div>
 </section>
+{% else %}
+<section class="card empty span-3">
+  <h2 class="card-title">Nothing here yet</h2>
+  <p class="card-body">Register a widget to start building this dashboard.</p>
+</section>
+{% endfor %}
 {% endblock %}

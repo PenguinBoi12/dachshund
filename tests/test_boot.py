@@ -7,11 +7,12 @@ import pytest
 from aiohttp import web
 
 from dachshund.runtime.boot import Runtime
+from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
 
 
 def build_app() -> web.Application:
-    return create_app(name="Ada")
+    return create_app(Dashboard("Ada"))
 
 
 @pytest.fixture
