@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+
+[project]
+name = "dachshund"
+dynamic = ["version"]
+authors = [
+    { name = "Simon Roy" }
+]
+description = "An embedded, real-time admin dashboard for any Python service"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+
+dependencies = [
+    "aiohttp==3.13.5",
+    "Jinja2==3.1.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-asyncio==1.4.0",
+    "black==26.5.1",
+    "mypy==2.1.0",
+]
+doc = [
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.7.6",
+    "mkdocstrings[python]==1.0.4"
+]
+
+[project.urls]
+"Source" = "https://github.com/PenguinBoi12/dachshund"
+"Issues" = "https://github.com/PenguinBoi12/dachshund/issues"
+
+[tool.setuptools]
+license-files = []
+
+[tool.setuptools.packages.find]
+include = ["dachshund*"]
+
+[tool.setuptools.package-data]
+dachshund = ["py.typed", "templates/*", "static/*"]
+
+[tool.setuptools_scm]
+write_to = "dachshund/_version.py"
+
+[tool.black]
+target-version = ["py310"]
+
+[tool.coverage.run]
+omit = [
+    "dachshund/_version.py",
+    "dachshund/__init__.py",
+]
