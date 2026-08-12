@@ -1,0 +1,191 @@
+/* Archivo and JetBrains Mono are named but not shipped yet: the bundle stays
+ * CDN-free, so they need vendoring as woff2 before they actually render. */
+:root {
+  --background: #0b0b0c;
+  --surface: #0e0e10;
+  --border: #1c1c1f;
+  --separator: #17171a;
+  --hover: #141416;
+  --selected: #17171a;
+
+  --text: #ededee;
+  --text-secondary: #d6d6da;
+  --text-muted: #84848c;
+  --text-faint: #5b5b63;
+  --text-dim: #4a4a52;
+
+  --online: #4ec26f;
+  --offline: #e05a4e;
+  --warning: #d8a13a;
+  --pending: #8f8f98;
+
+  --control-border: #2a2a2f;
+  --danger-text: #e05a4e;
+  --danger-border: #3a1f1f;
+  --danger-hover: #1c1315;
+
+  --font-ui: Archivo, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 11px;
+  --radius-control: 7px;
+  --radius-small: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #2a2a2e;
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232326;
+  border-radius: var(--radius-small);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 36px 40px 64px;
+  animation: fade-in 0.16s ease both;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.status-dot {
+  position: relative;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--online);
+}
+
+.service-name {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.service-status {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--online);
+}
+
+.service-description {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.colophon {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 0 40px 40px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 18px 20px;
+}
+
+.span-1 { grid-column: span 1; }
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+
+.card-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.card-body {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+@media (max-width: 720px) {
+  .page,
+  .colophon {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card {
+    grid-column: span 1;
+  }
+}

@@ -7,4 +7,12 @@ try:
 except PackageNotFoundError:
     from dachshund._version import version as __version__
 
-__all__: list[str] = []
+from dachshund.registry import Dashboard, init, shutdown
+from dachshund.runtime.boot import Runtime
+
+__all__ = [
+    "Dashboard",
+    "Runtime",
+    "init",
+    "shutdown",
+]

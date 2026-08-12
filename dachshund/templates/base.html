@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ static_url }}/dashboard.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="masthead">
+        <h1 class="service-name">{{ name }}</h1>
+        <span class="service-status" title="{{ started_at|timestamp }}">online · {{ started_at|since }}</span>
+      </header>
+      {% if description %}
+      <p class="service-description">{{ description }}</p>
+      {% endif %}
+      <div class="grid">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+    <footer class="colophon">dachshund v{{ version }}</footer>
+  </body>
+</html>
