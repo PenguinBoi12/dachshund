@@ -122,7 +122,6 @@ class Runtime:
         self._forget()
 
     def _forget(self) -> None:
-        """Drop the bookkeeping of a server that is no longer ours."""
         self._thread = None
         self._loop = None
         self._shutdown = None
@@ -130,7 +129,6 @@ class Runtime:
         self._pid = None
 
     def _run(self) -> None:
-        """Own an event loop for the lifetime of the runtime thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
@@ -148,7 +146,6 @@ class Runtime:
             self._ready.set()
 
     async def _serve(self) -> None:
-        """Serve the dashboard until the runtime is stopped."""
         self._shutdown = asyncio.Event()
         runner = web.AppRunner(
             self.create_app(),

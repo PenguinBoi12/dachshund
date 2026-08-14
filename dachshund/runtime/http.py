@@ -1,8 +1,6 @@
-import asyncio
 import json
-from contextlib import suppress
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -10,6 +8,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 import dachshund
 from dachshund.filters import FILTERS
 from dachshund.registry import Dashboard
+from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
+from dachshund.widgets.base import Widget
+from dachshund.runtime.ws import WS_PATH, pumping, websocket
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PACKAGE_ROOT / "templates"
@@ -17,10 +18,6 @@ STATIC_DIR = PACKAGE_ROOT / "static"
 STATIC_PREFIX = "/_static"
 
 FALLBACK_NAME = "Dashboard"
-DRAIN_INTERVAL = 0.2
-
-TEMPLATES = web.AppKey("templates", Environment)
-DASHBOARD = web.AppKey("dashboard", Dashboard)
 
 
 def create_environment() -> Environment:
@@ -34,13 +31,18 @@ def create_environment() -> Environment:
     return environment
 
 
+def heading(widget: Widget) -> str:
+    """What a card says, falling back to a readable form of the widget's name."""
+    return widget.title or widget.name.replace("_", " ")
+
+
 def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
     """Build every widget card, filled with the events kept so far."""
     return [
         {
             "name": widget.name,
             "type": widget.type,
-            "label": widget.label,
+            "title": heading(widget),
             "size": widget.size,
             "payload": json.dumps(
                 widget.render(dashboard.events.events(widget.source))
@@ -67,27 +69,6 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
-async def drain(app: web.Application) -> None:
-    """Move emitted events into the store, forever."""
-    dashboard = app[DASHBOARD]
-
-    while True:
-        await asyncio.sleep(DRAIN_INTERVAL)
-        dashboard.drain()
-
-
-async def draining(app: web.Application) -> AsyncIterator[None]:
-    """Run the drain task for as long as the application is served."""
-    task = asyncio.create_task(drain(app))
-
-    yield
-
-    task.cancel()
-
-    with suppress(asyncio.CancelledError):
-        await task
-
-
 def create_app(dashboard: Dashboard) -> web.Application:
     """Build the aiohttp application serving a dashboard.
 
@@ -105,10 +86,12 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app = web.Application()
     app[TEMPLATES] = create_environment()
     app[DASHBOARD] = dashboard
+    app[CLIENTS] = set()
 
     app.router.add_get("/", index, name="index")
+    app.router.add_get(WS_PATH, websocket, name="websocket")
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
 
-    app.cleanup_ctx.append(draining)
+    app.cleanup_ctx.append(pumping)
 
     return app

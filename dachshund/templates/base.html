@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ static_url }}/uplot.min.css">
     <link rel="stylesheet" href="{{ static_url }}/dashboard.css">
   </head>
   <body>
@@ -19,6 +20,8 @@
         {% block content %}{% endblock %}
       </div>
     </main>
-    <footer class="colophon">dachshund v{{ version }}</footer>
+    <footer class="colophon"><a href="https://github.com/PenguinBoi12/dachshund">dachshund</a> - v{{ version }}</footer>
+    <script src="{{ static_url }}/uplot.min.js"></script>
+    <script src="{{ static_url }}/dashboard.js"></script>
   </body>
 </html>

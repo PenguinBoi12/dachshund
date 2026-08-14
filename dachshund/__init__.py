@@ -11,7 +11,7 @@ from dachshund.registry import (
     Dashboard,
     default,
     emit,
-    graph,
+    chart,
     init,
     shutdown,
     widget,
@@ -19,17 +19,21 @@ from dachshund.registry import (
 from dachshund.runtime.boot import Runtime
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
-from dachshund.widgets.builtin.line import LineGraph
+from dachshund.widgets.chart.bar import BarChart
+from dachshund.widgets.chart.line import LineChart
+from dachshund.widgets.chart.timeseries import TimeSeriesChart
 
 __all__ = [
+    "BarChart",
     "Dashboard",
     "Event",
-    "LineGraph",
+    "LineChart",
     "Runtime",
+    "TimeSeriesChart",
     "Widget",
+    "chart",
     "default",
     "emit",
-    "graph",
     "init",
     "shutdown",
     "widget",

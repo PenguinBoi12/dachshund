@@ -9,7 +9,9 @@ import pytest
 import dachshund
 from dachshund import registry
 from dachshund.registry import Dashboard
-from dachshund.widgets.builtin.line import LineGraph
+from dachshund.widgets.chart.bar import BarChart
+from dachshund.widgets.chart.line import LineChart
+from dachshund.widgets.chart.timeseries import TimeSeriesChart
 
 
 @pytest.fixture(autouse=True)
@@ -120,9 +122,9 @@ def test_dashboard_with_a_blank_name__expect_value_error(name: str) -> None:
         Dashboard(name)
 
 
-def test_graph__expect_it_registered_with_its_own_name_as_source() -> None:
+def test_chart__expect_it_registered_with_its_own_name_as_source() -> None:
     dashboard = Dashboard()
-    graph = dashboard.graph("latency", size=2)
+    graph = dashboard.chart("latency", type="timeseries", size=2)
 
     assert dashboard.widgets == {"latency": graph}
     assert graph.source == "latency"
@@ -131,16 +133,16 @@ def test_graph__expect_it_registered_with_its_own_name_as_source() -> None:
 
 def test_add_a_duplicate_name__expect_value_error() -> None:
     dashboard = Dashboard()
-    dashboard.graph("latency")
+    dashboard.chart("latency", type="timeseries")
 
     with pytest.raises(ValueError, match="already exists"):
-        dashboard.graph("latency")
+        dashboard.chart("latency", type="timeseries")
 
 
 def test_watching__expect_the_widgets_fed_by_a_source() -> None:
     dashboard = Dashboard()
-    graph = dashboard.graph("latency", source="request")
-    dashboard.graph("errors")
+    graph = dashboard.chart("latency", type="timeseries", source="request")
+    dashboard.chart("errors", type="timeseries")
 
     assert dashboard.watching("request") == [graph]
 
@@ -180,7 +182,7 @@ def test_emit_from_another_thread__expect_it_queued() -> None:
 
 
 def test_module_level_registration__expect_the_default_dashboard() -> None:
-    graph = dachshund.graph("latency")
+    graph = dachshund.chart("latency", type="timeseries")
     dachshund.emit("latency", value=96)
 
     assert dachshund.default().widgets == {"latency": graph}
@@ -188,7 +190,7 @@ def test_module_level_registration__expect_the_default_dashboard() -> None:
 
 
 def test_widgets_registered_before_init__expect_them_kept() -> None:
-    graph = dachshund.graph("latency")
+    graph = dachshund.chart("latency", type="timeseries")
     dashboard = dachshund.init("Ada", port=0)
 
     assert dashboard.widgets == {"latency": graph}
@@ -196,9 +198,9 @@ def test_widgets_registered_before_init__expect_them_kept() -> None:
 
 def test_widget__expect_a_widget_of_the_named_type() -> None:
     dashboard = Dashboard()
-    widget = dashboard.widget("latency", type="line", size=2)
+    widget = dashboard.widget("latency", type="timeseries", size=2)
 
-    assert isinstance(widget, LineGraph)
+    assert isinstance(widget, TimeSeriesChart)
     assert dashboard.widgets == {"latency": widget}
     assert widget.source == "latency"
 
@@ -222,12 +224,31 @@ def test_emit_of_a_field_named_source__expect_no_collision() -> None:
     assert dashboard.drain()[0].payload == {"source": "webhook"}
 
 
-def test_graph_with_an_unknown_chart__expect_value_error() -> None:
-    with pytest.raises(ValueError, match="charted as line"):
-        Dashboard().graph("latency", chart="pie")
+def test_chart_of_an_unknown_type__expect_value_error() -> None:
+    with pytest.raises(ValueError, match="no 'pie' widget type"):
+        Dashboard().chart("latency", type="pie")
 
 
-def test_graph__expect_a_line_by_default() -> None:
-    graph = Dashboard().graph("latency")
+def test_chart__expect_a_line_by_default() -> None:
+    graph = Dashboard().chart("throughput", x="requests")
 
-    assert isinstance(graph, LineGraph)
+    assert isinstance(graph, LineChart)
+
+
+def test_chart_typed_as_a_line__expect_x_and_y_fields() -> None:
+    graph = Dashboard().chart("throughput", type="line", x="requests", y="latency")
+
+    assert isinstance(graph, LineChart)
+    assert (graph.x, graph.y) == ("requests", "latency")
+
+
+def test_timeseries_given_an_x__expect_value_error() -> None:
+    with pytest.raises(ValueError, match="takes its x from when events happen"):
+        Dashboard().chart("latency", type="timeseries", x="requests")
+
+
+def test_chart_typed_as_a_bar__expect_x_naming_its_category() -> None:
+    chart = Dashboard().chart("commands", type="bar", x="name")
+
+    assert isinstance(chart, BarChart)
+    assert chart.x == "name"

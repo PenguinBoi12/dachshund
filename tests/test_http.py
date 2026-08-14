@@ -1,8 +1,17 @@
+import json
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from dachshund.registry import Dashboard
-from dachshund.runtime.http import FALLBACK_NAME, create_app, create_environment
+from dachshund.widgets.chart.timeseries import TimeSeriesChart
+from dachshund.runtime.http import (
+    FALLBACK_NAME,
+    cards,
+    create_app,
+    create_environment,
+    heading,
+)
 
 
 @pytest.mark.asyncio
@@ -69,3 +78,108 @@ async def test_index_without_a_name__expect_a_generic_title() -> None:
         body = await response.text()
 
     assert f"<title>{FALLBACK_NAME}</title>" in body
+
+
+@pytest.mark.asyncio
+async def test_index__expect_the_client_bundle_loaded() -> None:
+    async with TestClient(TestServer(create_app(Dashboard()))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert '<script src="/_static/uplot.min.js"></script>' in body
+    assert '<script src="/_static/dashboard.js"></script>' in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "asset", ["uplot.min.js", "uplot.min.css", "dashboard.js", "dashboard.css"]
+)
+async def test_static__expect_the_vendored_bundle_served(asset: str) -> None:
+    async with TestClient(TestServer(create_app(Dashboard()))) as client:
+        response = await client.get(f"/_static/{asset}")
+
+    assert response.status == 200
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_widget__expect_its_points_hydrated() -> None:
+    dashboard = Dashboard()
+    dashboard.chart("latency", type="timeseries")
+    dashboard.emit("latency", value=96)
+    dashboard.drain()
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert 'data-widget="latency"' in body
+    assert 'data-type="timeseries"' in body
+    assert "96.0" in body
+
+
+def test_heading__expect_the_title_when_given() -> None:
+    chart = TimeSeriesChart("latency", source="latency", title="Response time")
+
+    assert heading(chart) == "Response time"
+
+
+def test_heading__expect_a_readable_name_without_a_title() -> None:
+    assert heading(TimeSeriesChart("requests_per_sec", source="request")) == (
+        "requests per sec"
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_titled_bar__expect_its_title_shown() -> None:
+    dashboard = Dashboard()
+    dashboard.chart("command_calls", type="bar", x="name", title="Calls Per Command")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "Calls Per Command" in body
+    assert ">name<" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_several_y_fields__expect_every_series_hydrated() -> None:
+    dashboard = Dashboard()
+    dashboard.chart("send_latency", type="timeseries", y=["p50", "p95"])
+    dashboard.emit("send_latency", p50=10, p95=40)
+    dashboard.drain()
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "p50" in body
+    assert "p95" in body
+
+
+def test_cards__expect_a_series_aware_payload() -> None:
+    dashboard = Dashboard()
+    dashboard.chart("send_latency", type="timeseries", y=["p50", "p95"])
+
+    payload = json.loads(cards(dashboard)[0]["payload"])
+
+    assert payload["series"] == ["p50", "p95"]
+    assert payload["y"] == [[], []]
+
+
+@pytest.mark.asyncio
+async def test_index_with_an_unreadable_value__expect_the_page_to_survive() -> None:
+    dashboard = Dashboard()
+    dashboard.chart("latency", type="timeseries")
+    dashboard.emit("latency", value="fast")
+    dashboard.emit("latency", value=float("inf"))
+    dashboard.emit("latency", value=96)
+    dashboard.drain()
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "NaN" not in body
+    assert "Infinity" not in body

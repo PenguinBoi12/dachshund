@@ -3,15 +3,14 @@ import logging
 import queue
 import threading
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from aiohttp import web
 
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage.events import Event, EventStore
-from dachshund.widgets import CHARTS, build
+from dachshund.widgets import build
 from dachshund.widgets.base import Widget
-from dachshund.widgets.builtin.line import LineGraph
 
 QUEUE_SIZE = 10_000
 
@@ -29,17 +28,14 @@ class Dashboard:
     A dashboard describes the service it watches, holds the widgets drawn on
     it, and owns the runtime serving them.
 
-    The name is optional and never guessed from the process, which under a
-    server runner would name the runner rather than your service.
-
     Most applications never build one directly, the module-level API works
-    against a default dashboard that `dachshund.init()` starts.
+    with a default dashboard that `dachshund.init()` starts.
 
     ## Example
 
     ```python
     dashboard = Dashboard("Ada", description="Code Society's Matrix bot")
-    dashboard.graph("latency")
+    dashboard.chart("latency", type="timeseries")
     dashboard.start()
     ```
     """
@@ -85,12 +81,12 @@ class Dashboard:
         self.runtime.stop()
 
     def add(self, widget: Widget) -> Widget:
-        """Put a widget on the dashboard.
+        """Add a widget on the dashboard.
 
         ## Example
 
         ```python
-        dashboard.add(LineGraph("latency", source="latency"))
+        dashboard.add(TimeSeriesChart("latency", source="latency"))
         ```
         """
         if widget.name in self.widgets:
@@ -101,56 +97,71 @@ class Dashboard:
         return widget
 
     def widget(self, name: str, *, type: str = "line", **options: Any) -> Widget:
-        """Put a widget of any registered type on the dashboard.
+        """Add a widget of any registered type on the dashboard.
 
         ## Example
 
         ```python
-        dashboard.widget("latency", type="line", size=2)
+        dashboard.widget("latency", type="timeseries", size=2)
         ```
         """
         return self.add(build(name, type=type, **options))
 
-    def graph(
+    def chart(
         self,
         name: str,
         *,
-        chart: str = "line",
+        type: str = "line",
         source: str | None = None,
-        field: str = "value",
+        x: str | None = None,
+        y: str | Sequence[str] = "value",
         title: str | None = None,
         size: int = 1,
     ) -> Widget:
-        """Put a chart of one value over time on the dashboard.
+        """Add a chart on the dashboard.
 
-        The source defaults to the widget's own name, so emitting under that
-        name is enough to feed it.
+        The type decides what is drawn and how `x` and `y` are read:
+
+        - `timeseries`: [TimeSeriesChart][dachshund.TimeSeriesChart], a line
+          over the time each event was emitted.
+        - `line`: [LineChart][dachshund.LineChart], one value against
+          another.
+        - `bar`: [BarChart][dachshund.BarChart], a total per category.
+
+        `y` names the field drawn and defaults to `value`.
+
+        The source defaults to the chart's own name, so emitting under that
+        name is enough to feed it. `title` names the card and `size` is how
+        many of the three columns it spans.
 
         ## Example
 
         ```python
-        dashboard.graph("latency", size=2)
+        dashboard.chart("latency", type="timeseries", title="Response time", size=2)
         dashboard.emit("latency", value=96)
         ```
+
+        ```python
+        dashboard.chart("commands", type="bar", x="name")
+        dashboard.emit("commands", name="/ban", value=1)
+        ```
         """
-        if chart not in CHARTS:
-            known = ", ".join(sorted(CHARTS))
-            raise ValueError(f"A graph is charted as {known}.")
+        options: dict[str, Any] = {"y": y}
+
+        if x is not None:
+            options["x"] = x
 
         return self.widget(
             name,
-            type=CHARTS[chart].type,
+            type=type,
             source=source or name,
-            field=field,
             title=title,
             size=size,
+            **options,
         )
 
     def emit(self, source: str, /, **fields: Any) -> None:
-        """Record something that happened, for the widgets watching `source`.
-
-        The fields are the event, and each widget reads the ones it draws.
-        Calling this never blocks and never raises
+        """Emit an event, on the default dashboard.
 
         ## Example
 
@@ -182,7 +193,7 @@ class Dashboard:
         return drained
 
     def watching(self, source: str) -> list[Widget]:
-        """The widgets fed by a source."""
+        """The widgets watching `source`."""
         return [widget for widget in self.widgets.values() if widget.source == source]
 
     def _create_app(self) -> web.Application:
@@ -193,10 +204,10 @@ class Dashboard:
 
 
 def default() -> Dashboard:
-    """The dashboard the module-level API works against.
+    """The dashboard the module-level API works with.
 
     Built on first use so widgets can be registered at import time, long
-    before `init()` starts serving anything.
+    before `init()` starts.
     """
     global _dashboard
 
@@ -216,12 +227,9 @@ def init(
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
-    The name is what the dashboard calls your service. Both it and the
-    description are optional: without a name the dashboard falls back to a
-    generic title.
-
-    Widgets registered before this call are kept, so `init()` belongs wherever
-    your application starts up.
+    `name` and `description` appear at the top of the dashboard page. Leave
+    either unset and the dashboard falls back to a generic title. Widgets
+    registered before this call are kept.
 
     ## Example
 
@@ -283,18 +291,20 @@ def shutdown() -> None:
         atexit.unregister(_dashboard.stop)
 
 
-def graph(name: str, **options: Any) -> Widget:
-    """Put a chart of one value over time on the default dashboard.
+def chart(name: str, **options: Any) -> Widget:
+    """Put a chart on the default dashboard.
+
+    Takes what [Dashboard.chart][dachshund.registry.Dashboard.chart] does.
 
     ## Example
 
     ```python
     import dachshund
 
-    dachshund.graph("latency", size=2)
+    dachshund.chart("latency", type="timeseries", size=2)
     ```
     """
-    return default().graph(name, **options)
+    return default().chart(name, **options)
 
 
 def widget(name: str, *, type: str = "line", **options: Any) -> Widget:
@@ -305,14 +315,14 @@ def widget(name: str, *, type: str = "line", **options: Any) -> Widget:
     ```python
     import dachshund
 
-    dachshund.widget("latency", type="line", size=2)
+    dachshund.widget("latency", type="timeseries", size=2)
     ```
     """
     return default().widget(name, type=type, **options)
 
 
 def emit(source: str, /, **fields: Any) -> None:
-    """Record something that happened, on the default dashboard.
+    """Emit an event, on the default dashboard.
 
     ## Example
 

@@ -70,3 +70,13 @@ markdown_extensions:
       base_path: [".."]
 nav:
   - Home: index.md
+  - Guides:
+      - Custom Widgets: guides/custom-widgets.md
+  - Reference:
+      - Dashboard: reference/dashboard.md
+      - Widget: reference/widget.md
+      - Time Series Chart: reference/timeseries-chart.md
+      - Line Chart: reference/line-chart.md
+      - Bar Chart: reference/bar-chart.md
+      - Events: reference/events.md
+      - Runtime: reference/runtime.md
