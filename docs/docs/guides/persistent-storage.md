@@ -26,13 +26,15 @@ async def load(self, key: str) -> dict | None: ...
 
 `save` replaces whatever was under a key. `load` reads it back, or returns `None` if nothing's there yet. That's the whole contract, one key to one JSON-shaped value.
 
+A backend built on an async driver (an async Postgres or Redis client, for instance) can implement that directly. One built on a synchronous client — most ORMs, a plain file, `requests` — needs its calls kept off the event loop instead; subclass [SyncStorage][dachshund.storage.protocol.SyncStorage] for that and implement `_save`/`_load` as plain synchronous methods, each run through `asyncio.to_thread` for you.
+
 Here's one backed by [SQLModel](https://sqlmodel.tiangolo.com/), for a project that's already using it elsewhere:
 
 ```python
-import asyncio
 import json
 
 from sqlmodel import Field, Session, SQLModel, create_engine
+from dachshund.storage.protocol import SyncStorage
 
 
 class WidgetState(SQLModel, table=True):
@@ -40,16 +42,10 @@ class WidgetState(SQLModel, table=True):
     value: str
 
 
-class SQLModelStorage:
+class SQLModelStorage(SyncStorage):
     def __init__(self, url: str) -> None:
         self.engine = create_engine(url)
         SQLModel.metadata.create_all(self.engine)
-
-    async def save(self, key: str, value: dict) -> None:
-        await asyncio.to_thread(self._save, key, value)
-
-    async def load(self, key: str) -> dict | None:
-        return await asyncio.to_thread(self._load, key)
 
     def _save(self, key: str, value: dict) -> None:
         with Session(self.engine) as session:
@@ -71,7 +67,7 @@ class SQLModelStorage:
 dachshund.init("Ada", storage=SQLModelStorage("sqlite:///widget_state.db"))
 ```
 
-`Session` is synchronous, so `save`/`load` run it through `asyncio.to_thread` rather than blocking the event loop, the same reason `SQLiteStorage` runs its own connection through a dedicated executor. That threading choice is yours to make though, `Storage` doesn't require it; a backend built on an async driver (an async Postgres or Redis client, for instance) can just `await` directly.
+A session-per-call ORM like this is safe to call from any thread, which is what `SyncStorage` needs. `SQLiteStorage` pins a single connection to one thread instead, so it doesn't use `SyncStorage`.
 
 ## Why raw events aren't part of this
 

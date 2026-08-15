@@ -9,8 +9,10 @@ from dachshund.storage.sqlite import SQLiteStorage
 dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
 ```
 
-`SQLiteStorage` is the one built in, self-contained and separate from wherever raw events live. See the [Persistent Storage](../guides/persistent-storage.md) guide for setting it up and for writing your own backend.
+`SQLiteStorage` is the one built in, self-contained and separate from wherever raw events live. Writing a backend on top of a synchronous client (an ORM, a sync driver) starts with `SyncStorage` instead of `Storage` directly. See the [Persistent Storage](../guides/persistent-storage.md) guide for setting either up.
 
 ::: dachshund.storage.protocol.Storage
 
 ::: dachshund.storage.sqlite.SQLiteStorage
+
+::: dachshund.storage.protocol.SyncStorage
