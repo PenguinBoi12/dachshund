@@ -89,8 +89,22 @@ class Dashboard:
         self.runtime.start()
 
     def stop(self) -> None:
-        """Stop serving the dashboard."""
+        """Stop serving the dashboard.
+
+        The dashboard itself is untouched, `start()` again later picks up
+        right where it left off. For releasing it for good, see `close()`.
+        """
         self.runtime.stop()
+
+    def close(self) -> None:
+        """Stop serving and release the connection backing raw events.
+
+        Unlike `stop()`, this dashboard can't be started again afterward.
+        A `storage=...` you configured is yours, this never closes it,
+        Dashboard didn't create it.
+        """
+        self.stop()
+        self.events.close()
 
     def add(self, widget: Widget) -> Widget:
         """Add a widget on the dashboard.
@@ -170,6 +184,8 @@ class Dashboard:
         ```
 
         ```python
+        from dachshund.storage.sqlite import SQLiteStorage
+
         dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
         dashboard.chart("commands", type="bar", x="name", persist=True)
         dashboard.emit("commands", name="/ban", value=1)
@@ -193,7 +209,7 @@ class Dashboard:
         )
 
     def emit(self, source: str, /, **fields: Any) -> None:
-        """Emit an event, on the default dashboard.
+        """Emit an event on the dashboard.
 
         ## Example
 
@@ -267,8 +283,9 @@ def init(
     """Start the dashboard alongside your application.
 
     `name` and `description` appear at the top of the dashboard page. Leave
-    either unset and the dashboard falls back to a generic title. Widgets
-    registered before this call are kept.
+    `name` unset and the dashboard falls back to a generic title; leave
+    `description` unset and none is shown. Widgets registered before this
+    call are kept.
 
     ## Example
 

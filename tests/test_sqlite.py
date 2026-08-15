@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dachshund.storage.state import SQLiteStorage
+from dachshund.storage.sqlite import SQLiteStorage
 
 
 @pytest.fixture

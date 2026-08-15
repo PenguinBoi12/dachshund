@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -9,10 +8,9 @@ from dachshund.storage.events import MIGRATIONS, Event, EventStore
 
 
 def make_store(path: Path, *, limit: int = 500) -> EventStore:
-    connection = db.connect(str(path))
-    db.migrate(connection, MIGRATIONS)
+    connection, executor = db.setup(str(path), MIGRATIONS)
 
-    return EventStore(connection, ThreadPoolExecutor(max_workers=1), limit=limit)
+    return EventStore(connection, executor, limit=limit)
 
 
 @pytest.fixture
@@ -83,6 +81,19 @@ async def test_append_of_nothing__expect_no_error(store: EventStore) -> None:
     await store.append([])
 
     assert await store.events("latency") == []
+
+
+@pytest.mark.asyncio
+async def test_close_then_use__expect_an_error(store: EventStore) -> None:
+    store.close()
+
+    with pytest.raises(RuntimeError):
+        await store.append([Event("latency", {"value": 1})])
+
+
+def test_close_twice__expect_no_error(store: EventStore) -> None:
+    store.close()
+    store.close()
 
 
 @pytest.mark.asyncio

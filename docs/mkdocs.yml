@@ -72,6 +72,7 @@ nav:
   - Home: index.md
   - Guides:
       - Custom Widgets: guides/custom-widgets.md
+      - Persistent Storage: guides/persistent-storage.md
   - Reference:
       - Dashboard: reference/dashboard.md
       - Widget: reference/widget.md
@@ -80,3 +81,4 @@ nav:
       - Bar Chart: reference/bar-chart.md
       - Events: reference/events.md
       - Runtime: reference/runtime.md
+      - Storage: reference/storage.md

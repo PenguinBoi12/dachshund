@@ -23,7 +23,7 @@ class SQLiteStorage:
 
     ```python
     import dachshund
-    from dachshund.storage.state import SQLiteStorage
+    from dachshund.storage.sqlite import SQLiteStorage
 
     dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
     ```
@@ -31,6 +31,20 @@ class SQLiteStorage:
 
     def __init__(self, path: str) -> None:
         self._connection, self._executor = db.setup(path, MIGRATIONS)
+        self._closed = False
+
+    def close(self) -> None:
+        """Close the connection and stop the executor backing it.
+
+        Dashboard never calls this on its own, a `Storage` you built is
+        yours to close when you're done with it. Safe to call more than
+        once, later calls are a no-op.
+        """
+        if self._closed:
+            return
+
+        self._closed = True
+        db.close(self._connection, self._executor)
 
     async def save(self, key: str, value: dict[str, Any]) -> None:
         """Replace whatever was kept under a key."""

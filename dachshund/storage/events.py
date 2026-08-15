@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
+from dachshund.storage import db
+
 DEFAULT_LIMIT = 500
 DEFAULT_PATH = "dachshund.db"
 
@@ -54,6 +56,18 @@ class EventStore:
         self._connection = connection
         self._executor = executor
         self.limit = limit
+        self._closed = False
+
+    def close(self) -> None:
+        """Close the connection and stop the executor backing it.
+
+        Safe to call more than once, later calls are a no-op.
+        """
+        if self._closed:
+            return
+
+        self._closed = True
+        db.close(self._connection, self._executor)
 
     async def append(self, events: Sequence[Event]) -> None:
         """Keep a batch of events.
@@ -71,7 +85,7 @@ class EventStore:
         await loop.run_in_executor(self._executor, self._insert, events)
 
     async def events(self, source: str) -> list[Event]:
-        """Every kept event of a source, oldest first."""
+        """The most recent kept events of a source, up to `limit`, oldest first."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._select, source)
 

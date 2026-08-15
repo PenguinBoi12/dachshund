@@ -32,7 +32,7 @@ class Gauge(Widget):
 
 ## render()
 
-`render(events)` builds the whole card from every event kept for the widget's source. It runs when the page loads, and again whenever a `replace` widget needs rebuilding. `Widget.value(event, field)` reads a field as a number, or `None` if the event doesn't carry one.
+`render(events)` builds the whole card from every event kept for the widget's source. It runs when the page loads, and again whenever a `replace` widget needs rebuilding. `Widget.value(event, field)` reads a field as a number, or `None` if the event doesn't carry one or it isn't numeric.
 
 ```python
     def render(self, events):
@@ -76,7 +76,7 @@ Right now Gauge only knows what `events` it's handed, which is the recent, windo
 This needs a `Storage` configured on the dashboard, the same as any persisting widget:
 
 ```python
-from dachshund.storage.state import SQLiteStorage
+from dachshund.storage.sqlite import SQLiteStorage
 
 dashboard = dachshund.Dashboard(storage=SQLiteStorage("widget_state.db"))
 dashboard.widget("cpu", type="gauge", persist=True)

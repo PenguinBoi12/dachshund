@@ -43,12 +43,14 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
     """
     messages = []
     rebuilt: dict[str, Widget] = {}
-    touched: set[str] = set()
+    persisting: dict[str, Widget] = {}
 
     for event in events:
         for widget in dashboard.watching(event.source):
             widget.accumulate(event)
-            touched.add(widget.name)
+
+            if getattr(widget, "persist", False):
+                persisting[widget.name] = widget
 
             if widget.op != "append":
                 rebuilt[widget.name] = widget
@@ -59,17 +61,19 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
             if change is not None:
                 messages.append(message(widget, change))
 
-    for widget in rebuilt.values():
-        if (
-            widget.name in touched
-            and getattr(widget, "persist", False)
-            and dashboard.storage is not None
-        ):
+    if dashboard.storage is not None:
+        for widget in persisting.values():
             snapshot = widget.snapshot()
 
-            if snapshot is not None:
-                await dashboard.storage.save(widget.name, snapshot)
+            if snapshot is None:
+                continue
 
+            try:
+                await dashboard.storage.save(widget.name, snapshot)
+            except Exception:
+                logger.exception("Could not persist %r's state.", widget.name)
+
+    for widget in rebuilt.values():
         kept = await dashboard.events.events(widget.source)
         messages.append(message(widget, widget.render(kept)))
 
@@ -92,7 +96,11 @@ async def hydrate(dashboard: Dashboard) -> None:
         if not getattr(widget, "persist", False):
             continue
 
-        data = await dashboard.storage.load(widget.name)
+        try:
+            data = await dashboard.storage.load(widget.name)
+        except Exception:
+            logger.exception("Could not load %r's persisted state.", widget.name)
+            continue
 
         if data is not None:
             widget.restore(data)

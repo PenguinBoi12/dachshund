@@ -27,6 +27,22 @@ def setup(
     return connection, executor
 
 
+def close(connection: sqlite3.Connection, executor: ThreadPoolExecutor) -> None:
+    """Close a connection opened by `setup()`, and stop its executor.
+
+    The close itself runs through the executor too, the same thread that's
+    owned the connection all along.
+
+    ## Example
+
+    ```python
+    close(connection, executor)
+    ```
+    """
+    executor.submit(connection.close).result()
+    executor.shutdown()
+
+
 def connect(path: str) -> sqlite3.Connection:
     """Open a WAL-mode connection to a SQLite file.
 
@@ -40,7 +56,7 @@ def connect(path: str) -> sqlite3.Connection:
     migrate(connection, events.MIGRATIONS)
     ```
     """
-    connection = sqlite3.connect(path, check_same_thread=False)
+    connection = sqlite3.connect(path)
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA synchronous=NORMAL")
     connection.execute("PRAGMA busy_timeout=5000")
@@ -61,7 +77,6 @@ def migrate(connection: sqlite3.Connection, migrations: Sequence[str]) -> None:
     """
     (version,) = connection.execute("PRAGMA user_version").fetchone()
 
-    for script in migrations[version:]:
+    for index, script in enumerate(migrations[version:], start=version):
         connection.executescript(script)
-
-    connection.execute(f"PRAGMA user_version = {len(migrations)}")
+        connection.execute(f"PRAGMA user_version = {index + 1}")

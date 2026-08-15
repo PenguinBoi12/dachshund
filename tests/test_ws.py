@@ -1,3 +1,7 @@
+import logging
+from dataclasses import KW_ONLY, dataclass, field
+from typing import Any, ClassVar
+
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -6,8 +10,40 @@ from dachshund.runtime.http import create_app
 from dachshund.runtime.keys import CLIENTS
 from dachshund.runtime.ws import WS_PATH, broadcast, hydrate, updates
 from dachshund.storage.events import Event
+from dachshund.widgets.base import Widget
 
 RECEIVE_TIMEOUT = 5.0
+
+
+@dataclass
+class AppendingCounter(Widget):
+    """A minimal op="append" widget that persists, for exercising the write
+    path a persisting BarChart (op="replace") never touches."""
+
+    _: KW_ONLY
+
+    persist: bool = False
+
+    total: float = field(default=0.0, init=False, repr=False, compare=False)
+
+    type: ClassVar[str] = "test_appending_counter"
+    op: ClassVar[str] = "append"
+
+    def accumulate(self, event: Event) -> None:
+        if self.persist:
+            self.total += 1
+
+    def snapshot(self) -> dict[str, Any] | None:
+        return {"total": self.total} if self.persist else None
+
+    def restore(self, data: dict[str, Any]) -> None:
+        self.total = data.get("total", 0.0)
+
+    def update(self, event: Event) -> dict[str, Any] | None:
+        return {"total": self.total}
+
+    def render(self, events: object) -> dict[str, Any]:
+        return {"total": self.total}
 
 
 class FakeStorage:
@@ -20,6 +56,27 @@ class FakeStorage:
         self.saved[key] = value
 
     async def load(self, key: str) -> dict[str, object] | None:
+        return self.saved.get(key)
+
+
+class PartiallyFlakyStorage:
+    """A `Storage` that raises for one specific key, works normally for
+    everything else, for testing that a failure stays isolated."""
+
+    def __init__(self, fails_on: str) -> None:
+        self.fails_on = fails_on
+        self.saved: dict[str, dict[str, object]] = {}
+
+    async def save(self, key: str, value: dict[str, object]) -> None:
+        if key == self.fails_on:
+            raise RuntimeError("boom")
+
+        self.saved[key] = value
+
+    async def load(self, key: str) -> dict[str, object] | None:
+        if key == self.fails_on:
+            raise RuntimeError("boom")
+
         return self.saved.get(key)
 
 
@@ -278,3 +335,59 @@ async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persis
     assert "commands" in storage.saved
     assert "recent" not in storage.saved
     assert {message["widget"] for message in messages} == {"commands", "recent"}
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_persisting_append_widget__expect_it_saved() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.add(AppendingCounter("hits", source="hits", persist=True))
+
+    dashboard.emit("hits", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
+
+    assert storage.saved["hits"] == {"total": 1.0}
+    assert messages == [{"widget": "hits", "op": "append", "data": {"total": 1.0}}]
+
+
+@pytest.mark.asyncio
+async def test_hydrate_when_storage_raises__expect_the_other_widgets_still_seeded(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage = PartiallyFlakyStorage(fails_on="broken")
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("broken", type="bar", x="name", persist=True)
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    await storage.save("commands", {"totals": {"/ban": 3}})
+
+    with caplog.at_level(logging.ERROR, logger="dachshund"):
+        await hydrate(dashboard)
+
+    assert dashboard.widgets["commands"].totals == {"/ban": 3}  # type: ignore[attr-defined]
+    assert dashboard.widgets["broken"].totals == {}  # type: ignore[attr-defined]
+    assert "'broken'" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_updates_when_storage_raises_for_one_widget__expect_the_others_unaffected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage = PartiallyFlakyStorage(fails_on="broken")
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("broken", type="bar", x="name", persist=True)
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+
+    dashboard.emit("broken", name="/x", value=1)
+    dashboard.emit("commands", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+
+    with caplog.at_level(logging.ERROR, logger="dachshund"):
+        messages = await updates(dashboard, events)
+
+    assert storage.saved["commands"] == {"totals": {"/ban": 1.0}}
+    assert "broken" not in storage.saved
+    assert {message["widget"] for message in messages} == {"broken", "commands"}
+    assert "'broken'" in caplog.text

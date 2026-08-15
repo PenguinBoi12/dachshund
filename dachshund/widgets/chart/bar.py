@@ -36,6 +36,8 @@ class BarChart(Widget):
     dashboard first, there's no default:
 
     ```python
+    from dachshund.storage.sqlite import SQLiteStorage
+
     dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
     dashboard.chart("commands", type="bar", x="name", persist=True)
     dashboard.emit("commands", name="/ban", value=1)
