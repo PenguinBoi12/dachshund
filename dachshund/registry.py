@@ -2,13 +2,17 @@ import atexit
 import logging
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from aiohttp import web
 
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
-from dachshund.storage.events import Event, EventStore
+from dachshund.storage import db
+from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
+from dachshund.storage.events import DEFAULT_PATH, Event, EventStore
+from dachshund.storage.protocol import Storage
 from dachshund.widgets import build
 from dachshund.widgets.base import Widget
 
@@ -47,6 +51,8 @@ class Dashboard:
         description: str | None = None,
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
+        path: str = DEFAULT_PATH,
+        storage: Storage | None = None,
     ) -> None:
         if name is not None and not name.strip():
             raise ValueError("A dashboard name cannot be blank.")
@@ -54,10 +60,22 @@ class Dashboard:
         self.name = name
         self.description = description
         self.started_at = datetime.now(tz=timezone.utc)
+        self.path = path
 
         self.widgets: dict[str, Widget] = {}
-        self.events = EventStore()
         self.dropped = 0
+
+        # A single worker, so EventStore always runs on the same OS thread,
+        # whatever an async caller awaits it from.
+        self._executor = ThreadPoolExecutor(max_workers=1)
+        self._connection = self._executor.submit(db.connect, path).result()
+        self._executor.submit(db.migrate, self._connection, EVENTS_MIGRATIONS).result()
+
+        self.events = EventStore(self._connection, self._executor)
+
+        # No default: a persisting widget's state is a deliberate choice,
+        # not something to quietly tuck into the same file as raw events.
+        self.storage = storage
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
@@ -92,6 +110,13 @@ class Dashboard:
         if widget.name in self.widgets:
             raise ValueError(f"A widget named {widget.name!r} already exists.")
 
+        if getattr(widget, "persist", False) and self.storage is None:
+            raise ValueError(
+                f"{widget.name!r} wants to persist, but no storage is "
+                "configured. Pass storage=... to Dashboard() or "
+                "dachshund.init()."
+            )
+
         self.widgets[widget.name] = widget
 
         return widget
@@ -117,6 +142,7 @@ class Dashboard:
         y: str | Sequence[str] = "value",
         title: str | None = None,
         size: int = 1,
+        persist: bool = False,
     ) -> Widget:
         """Add a chart on the dashboard.
 
@@ -134,6 +160,14 @@ class Dashboard:
         name is enough to feed it. `title` names the card and `size` is how
         many of the three columns it spans.
 
+        `persist` is [BarChart][dachshund.BarChart]'s own opt-in, forwarded
+        here since `bar` is one of the types this method knows about: its
+        totals survive a restart instead of only covering the events
+        currently kept. It needs `storage=...` configured on the dashboard
+        first (see [Dashboard][dachshund.Dashboard]), nothing persists by
+        default. Persisting isn't bar-chart-specific though: any widget can
+        keep its own state the same way, see [Widget][dachshund.Widget].
+
         ## Example
 
         ```python
@@ -142,7 +176,8 @@ class Dashboard:
         ```
 
         ```python
-        dashboard.chart("commands", type="bar", x="name")
+        dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
+        dashboard.chart("commands", type="bar", x="name", persist=True)
         dashboard.emit("commands", name="/ban", value=1)
         ```
         """
@@ -150,6 +185,9 @@ class Dashboard:
 
         if x is not None:
             options["x"] = x
+
+        if persist:
+            options["persist"] = True
 
         return self.widget(
             name,
@@ -178,7 +216,11 @@ class Dashboard:
             self.dropped += 1
 
     def drain(self) -> list[Event]:
-        """Move every queued event into the store, and hand them back."""
+        """Pull every queued event off the queue, oldest first.
+
+        Draining alone doesn't persist anything; the caller decides when to
+        `await self.events.append(...)` the batch.
+        """
         drained = []
 
         while True:
@@ -187,7 +229,6 @@ class Dashboard:
             except queue.Empty:
                 break
 
-            self.events.append(event)
             drained.append(event)
 
         return drained
@@ -203,17 +244,19 @@ class Dashboard:
         return create_app(self)
 
 
-def default() -> Dashboard:
+def default(*, path: str = DEFAULT_PATH, storage: Storage | None = None) -> Dashboard:
     """The dashboard the module-level API works with.
 
     Built on first use so widgets can be registered at import time, long
-    before `init()` starts.
+    before `init()` starts. `path` and `storage` only matter on that first
+    use: storage is opened once, at construction, and can't be re-pointed
+    afterward.
     """
     global _dashboard
 
     with _lock:
         if _dashboard is None:
-            _dashboard = Dashboard()
+            _dashboard = Dashboard(path=path, storage=storage)
 
         return _dashboard
 
@@ -224,6 +267,8 @@ def init(
     description: str | None = None,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
+    path: str = DEFAULT_PATH,
+    storage: Storage | None = None,
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
@@ -245,9 +290,27 @@ def init(
     dachshund.init("Ada", host="0.0.0.0", port=1212)
     ```
     """
-    dashboard = default()
+    dashboard = default(path=path, storage=storage)
 
     with _lock:
+        if dashboard.path != path:
+            logger.warning(
+                "The dashboard already opened %r for storage, ignoring the "
+                "requested %r. Widgets registered before `init()` fix the "
+                "storage path too, so pass it to the first call that "
+                "touches the dashboard.",
+                dashboard.path,
+                path,
+            )
+
+        if storage is not None and dashboard.storage is not storage:
+            logger.warning(
+                "The dashboard already set up its own storage, ignoring the "
+                "one requested here. Widgets registered before `init()` fix "
+                "storage too, so pass it to the first call that touches the "
+                "dashboard."
+            )
+
         if dashboard.is_running:
             runtime = dashboard.runtime
 

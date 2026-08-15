@@ -22,7 +22,7 @@ def message(widget: Widget, data: dict[str, Any]) -> dict[str, Any]:
     return {"widget": widget.name, "op": widget.op, "data": data}
 
 
-def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
+async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
     """Build what the open pages need to apply for a batch of events.
 
     An event updates every widget watching its source, so one emit can
@@ -31,19 +31,25 @@ def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
     ## Example
 
     ```python
-    dashboard = Dashboard()
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
     dashboard.emit("latency", value=96)
 
-    updates(dashboard, dashboard.drain())
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    await updates(dashboard, events)
     # [{"widget": "latency", "op": "append", "data": {"x": ..., "y": [96.0]}}]
     ```
     """
     messages = []
     rebuilt: dict[str, Widget] = {}
+    touched: set[str] = set()
 
     for event in events:
         for widget in dashboard.watching(event.source):
+            widget.accumulate(event)
+            touched.add(widget.name)
+
             if widget.op != "append":
                 rebuilt[widget.name] = widget
                 continue
@@ -54,10 +60,42 @@ def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
                 messages.append(message(widget, change))
 
     for widget in rebuilt.values():
-        kept = dashboard.events.events(widget.source)
+        if (
+            widget.name in touched
+            and getattr(widget, "persist", False)
+            and dashboard.storage is not None
+        ):
+            snapshot = widget.snapshot()
+
+            if snapshot is not None:
+                await dashboard.storage.save(widget.name, snapshot)
+
+        kept = await dashboard.events.events(widget.source)
         messages.append(message(widget, widget.render(kept)))
 
     return messages
+
+
+async def hydrate(dashboard: Dashboard) -> None:
+    """Seed every persisting widget from whatever storage last saved for it.
+
+    ## Example
+
+    ```python
+    await hydrate(dashboard)
+    ```
+    """
+    if dashboard.storage is None:
+        return
+
+    for widget in dashboard.widgets.values():
+        if not getattr(widget, "persist", False):
+            continue
+
+        data = await dashboard.storage.load(widget.name)
+
+        if data is not None:
+            widget.restore(data)
 
 
 async def broadcast(app: web.Application, messages: list[dict[str, Any]]) -> None:
@@ -95,13 +133,21 @@ async def pump(app: web.Application) -> None:
         await asyncio.sleep(PUMP_INTERVAL)
 
         try:
-            await broadcast(app, updates(dashboard, dashboard.drain()))
+            events = dashboard.drain()
+            await dashboard.events.append(events)
+            await broadcast(app, await updates(dashboard, events))
         except Exception:
             logger.exception("Dropped a batch of dashboard updates.")
 
 
 async def pumping(app: web.Application) -> AsyncIterator[None]:
-    """Run the pump for as long as the application is served."""
+    """Run the pump for as long as the application is served.
+
+    Persisting widgets are hydrated first, before the site accepts any
+    connections, so the very first page load already reflects them.
+    """
+    await hydrate(app[DASHBOARD])
+
     task = asyncio.create_task(pump(app))
 
     yield

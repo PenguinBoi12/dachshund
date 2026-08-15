@@ -12,7 +12,7 @@ from dachshund.runtime.http import create_app
 
 
 def build_app() -> web.Application:
-    return create_app(Dashboard("Ada"))
+    return create_app(Dashboard("Ada", path=":memory:"))
 
 
 @pytest.fixture

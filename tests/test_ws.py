@@ -4,35 +4,50 @@ from aiohttp.test_utils import TestClient, TestServer
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
 from dachshund.runtime.keys import CLIENTS
-from dachshund.runtime.ws import WS_PATH, broadcast, updates
+from dachshund.runtime.ws import WS_PATH, broadcast, hydrate, updates
 from dachshund.storage.events import Event
 
 RECEIVE_TIMEOUT = 5.0
 
 
-def test_updates__expect_one_per_widget_watching_the_source() -> None:
-    dashboard = Dashboard()
+class FakeStorage:
+    """An in-memory `Storage`, for tests that don't need real SQLite."""
+
+    def __init__(self) -> None:
+        self.saved: dict[str, dict[str, object]] = {}
+
+    async def save(self, key: str, value: dict[str, object]) -> None:
+        self.saved[key] = value
+
+    async def load(self, key: str) -> dict[str, object] | None:
+        return self.saved.get(key)
+
+
+@pytest.mark.asyncio
+async def test_updates__expect_one_per_widget_watching_the_source() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
     dashboard.chart("also_latency", type="timeseries", source="latency")
     dashboard.chart("errors", type="timeseries")
 
-    messages = updates(dashboard, [Event("latency", {"value": 96})])
+    messages = await updates(dashboard, [Event("latency", {"value": 96})])
 
     assert [message["widget"] for message in messages] == ["latency", "also_latency"]
     assert messages[0]["op"] == "append"
     assert messages[0]["data"]["y"] == [96.0]
 
 
-def test_updates_of_an_unwatched_source__expect_nothing() -> None:
-    dashboard = Dashboard()
+@pytest.mark.asyncio
+async def test_updates_of_an_unwatched_source__expect_nothing() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
 
-    assert updates(dashboard, [Event("errors")]) == []
+    assert await updates(dashboard, [Event("errors")]) == []
 
 
 @pytest.mark.asyncio
 async def test_emit_while_connected__expect_the_update_pushed() -> None:
-    dashboard = Dashboard()
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
@@ -51,7 +66,7 @@ async def test_emit_while_connected__expect_the_update_pushed() -> None:
 
 @pytest.mark.asyncio
 async def test_emit_while_two_pages_are_open__expect_both_told() -> None:
-    dashboard = Dashboard()
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
@@ -67,7 +82,7 @@ async def test_emit_while_two_pages_are_open__expect_both_told() -> None:
 
 @pytest.mark.asyncio
 async def test_connect__expect_the_page_tracked_then_forgotten() -> None:
-    app = create_app(Dashboard())
+    app = create_app(Dashboard(path=":memory:"))
 
     async with TestClient(TestServer(app)) as client:
         async with client.ws_connect(WS_PATH):
@@ -80,7 +95,7 @@ async def test_connect__expect_the_page_tracked_then_forgotten() -> None:
 
 @pytest.mark.asyncio
 async def test_emit_of_a_batch__expect_one_message_carrying_them_all() -> None:
-    dashboard = Dashboard()
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
@@ -102,7 +117,7 @@ class Gone:
 
 @pytest.mark.asyncio
 async def test_broadcast_to_a_page_that_went_away__expect_it_dropped() -> None:
-    app = create_app(Dashboard())
+    app = create_app(Dashboard(path=":memory:"))
     gone = Gone()
     app[CLIENTS].add(gone)  # type: ignore[arg-type]
 
@@ -113,7 +128,7 @@ async def test_broadcast_to_a_page_that_went_away__expect_it_dropped() -> None:
 
 @pytest.mark.asyncio
 async def test_broadcast_of_nothing__expect_no_send() -> None:
-    app = create_app(Dashboard())
+    app = create_app(Dashboard(path=":memory:"))
     app[CLIENTS].add(Gone())  # type: ignore[arg-type]
 
     await broadcast(app, [])
@@ -121,15 +136,17 @@ async def test_broadcast_of_nothing__expect_no_send() -> None:
     assert len(app[CLIENTS]) == 1
 
 
-def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> None:
-    dashboard = Dashboard()
+@pytest.mark.asyncio
+async def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("commands", type="bar", x="name")
 
     for name in ("/ban", "/help", "/ban"):
         dashboard.emit("commands", name=name, value=1)
 
     events = dashboard.drain()
-    messages = updates(dashboard, events)
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
 
     assert len(messages) == 1
     assert messages[0] == {
@@ -143,15 +160,18 @@ def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> None:
     }
 
 
-def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
-    dashboard = Dashboard()
+@pytest.mark.asyncio
+async def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
     dashboard.chart("bars", type="bar", source="latency", x="name")
 
     dashboard.emit("latency", value=96, name="a")
     dashboard.emit("latency", value=108, name="a")
 
-    messages = updates(dashboard, dashboard.drain())
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
 
     assert [message["op"] for message in messages] == [
         "append",
@@ -160,26 +180,101 @@ def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
     ]
 
 
-def test_updates_with_an_unreadable_x__expect_the_point_dropped() -> None:
-    dashboard = Dashboard()
+@pytest.mark.asyncio
+async def test_updates_with_an_unreadable_x__expect_the_point_dropped() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("perf", type="line", x="requests", y="ms")
 
     dashboard.emit("perf", requests="many", ms=96)
     dashboard.emit("perf", requests=120, ms=108)
 
-    messages = updates(dashboard, dashboard.drain())
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
 
     assert [message["data"]["x"] for message in messages] == [120.0]
 
 
-def test_updates_with_a_bad_event__expect_the_other_widgets_unaffected() -> None:
-    dashboard = Dashboard()
+@pytest.mark.asyncio
+async def test_updates_with_a_bad_event__expect_the_other_widgets_unaffected() -> None:
+    dashboard = Dashboard(path=":memory:")
     dashboard.chart("latency", type="timeseries")
     dashboard.chart("also_latency", type="timeseries", source="latency")
 
     dashboard.emit("latency", value="fast")
 
-    messages = updates(dashboard, dashboard.drain())
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
 
     assert [message["widget"] for message in messages] == ["latency", "also_latency"]
     assert [message["data"]["y"] for message in messages] == [[None], [None]]
+
+
+@pytest.mark.asyncio
+async def test_hydrate_without_storage__expect_no_error() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+
+    await hydrate(dashboard)
+
+
+@pytest.mark.asyncio
+async def test_hydrate__expect_a_persisting_widget_seeded_from_storage() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    dashboard.chart("latency", type="timeseries")
+    await storage.save("commands", {"totals": {"/ban": 3}})
+
+    await hydrate(dashboard)
+
+    assert dashboard.widgets["commands"].totals == {"/ban": 3}  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+
+    dashboard.emit("commands", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    await updates(dashboard, events)
+
+    assert storage.saved["commands"] == {"totals": {"/ban": 1.0}}
+
+
+@pytest.mark.asyncio
+async def test_updates_of_an_untouched_widget__expect_nothing_saved() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    dashboard.chart("errors", type="bar", x="kind", persist=True)
+
+    dashboard.emit("commands", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    await updates(dashboard, events)
+
+    assert "errors" not in storage.saved
+
+
+@pytest.mark.asyncio
+async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persisting_one_saved() -> (
+    None
+):
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", source="calls", persist=True)
+    dashboard.chart("recent", type="bar", x="name", source="calls")
+
+    dashboard.emit("calls", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
+
+    assert "commands" in storage.saved
+    assert "recent" not in storage.saved
+    assert {message["widget"] for message in messages} == {"commands", "recent"}

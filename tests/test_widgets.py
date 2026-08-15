@@ -16,6 +16,10 @@ def test_widget_with_a_size_off_the_grid__expect_value_error(size: int) -> None:
         Widget("latency", source="latency", size=size)
 
 
+def test_widget_snapshot_by_default__expect_none() -> None:
+    assert Widget("latency", source="latency").snapshot() is None
+
+
 def test_builtin_chart_types__expect_them_registered() -> None:
     assert WIDGETS["bar"] is BarChart
     assert WIDGETS["line"] is LineChart
@@ -260,4 +264,54 @@ def test_bar_render_of_an_event_carrying_nothing__expect_it_left_out() -> None:
         "series": ["value"],
         "x": [],
         "y": [[]],
+    }
+
+
+def test_bar_accumulate_without_persist__expect_nothing_kept() -> None:
+    chart = BarChart("commands", source="commands", x="name")
+
+    chart.accumulate(Event("commands", {"name": "/ban", "value": 1}))
+
+    assert chart.totals == {}
+    assert chart.snapshot() is None
+
+
+def test_bar_accumulate_with_persist__expect_the_totals_kept() -> None:
+    chart = BarChart("commands", source="commands", x="name", persist=True)
+
+    chart.accumulate(Event("commands", {"name": "/ban", "value": 1}))
+    chart.accumulate(Event("commands", {"name": "/ban", "value": 1}))
+    chart.accumulate(Event("commands", {"name": "/help", "value": 1}))
+
+    assert chart.totals == {"/ban": 2.0, "/help": 1.0}
+    assert chart.snapshot() == {"totals": {"/ban": 2.0, "/help": 1.0}}
+
+
+def test_bar_accumulate_with_an_unreadable_value__expect_it_skipped() -> None:
+    chart = BarChart("weight", source="weight", x="name", y="ms", persist=True)
+
+    chart.accumulate(Event("weight", {"name": "/ban", "ms": "slow"}))
+
+    assert chart.totals == {}
+
+
+def test_bar_restore__expect_the_totals_seeded() -> None:
+    chart = BarChart("commands", source="commands", x="name", persist=True)
+
+    chart.restore({"totals": {"/ban": 4.0}})
+
+    assert chart.totals == {"/ban": 4.0}
+
+
+def test_bar_render_with_persist__expect_the_kept_totals_not_the_events() -> None:
+    chart = BarChart("commands", source="commands", x="name", persist=True)
+    chart.restore({"totals": {"/ban": 4.0}})
+
+    # A stale event, ignored: a persisting chart reads its own kept totals.
+    events = [Event("commands", {"name": "/help", "value": 1})]
+
+    assert chart.render(events) == {
+        "series": ["value"],
+        "x": ["/ban"],
+        "y": [[4.0]],
     }

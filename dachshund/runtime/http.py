@@ -36,20 +36,23 @@ def heading(widget: Widget) -> str:
     return widget.title or widget.name.replace("_", " ")
 
 
-def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
+async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
     """Build every widget card, filled with the events kept so far."""
-    return [
-        {
-            "name": widget.name,
-            "type": widget.type,
-            "title": heading(widget),
-            "size": widget.size,
-            "payload": json.dumps(
-                widget.render(dashboard.events.events(widget.source))
-            ),
-        }
-        for widget in dashboard.widgets.values()
-    ]
+    cards = []
+
+    for widget in dashboard.widgets.values():
+        kept = await dashboard.events.events(widget.source)
+        cards.append(
+            {
+                "name": widget.name,
+                "type": widget.type,
+                "title": heading(widget),
+                "size": widget.size,
+                "payload": json.dumps(widget.render(kept)),
+            }
+        )
+
+    return cards
 
 
 async def index(request: web.Request) -> web.Response:
@@ -61,7 +64,7 @@ async def index(request: web.Request) -> web.Response:
         name=dashboard.name or FALLBACK_NAME,
         description=dashboard.description,
         started_at=dashboard.started_at,
-        widgets=cards(dashboard),
+        widgets=await cards(dashboard),
         version=dachshund.__version__,
         static_url=STATIC_PREFIX,
     )
@@ -77,7 +80,7 @@ def create_app(dashboard: Dashboard) -> web.Application:
     ```python
     from aiohttp.test_utils import TestClient, TestServer
 
-    app = create_app(Dashboard("Ada"))
+    app = create_app(Dashboard("Ada", path=":memory:"))
 
     async with TestClient(TestServer(app)) as client:
         response = await client.get("/")

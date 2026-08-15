@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# Dachshund's own SQLite storage
+dachshund.db
+dachshund.db-wal
+dachshund.db-shm
+
 # Distribution / packaging
 .Python
 build/
