@@ -20,6 +20,12 @@ class Widget:
     whole card, from every event kept for its source. `update` builds a single
     incremental change, and `op` tells the client how to apply it.
 
+    `accumulate`, `snapshot`, and `restore` are optional, for a widget that
+    wants its own state to survive a restart, backed by whatever `Storage`
+    the dashboard is configured with. `BarChart`'s `persist` is the built-in
+    example; nothing about this is specific to bar charts, any widget can
+    do the same.
+
     Subclasses pair with a renderer registered under the same `type` in the
     client's dispatch table.
     """
@@ -96,6 +102,16 @@ class Widget:
     def update(self, event: Event) -> dict[str, Any] | None:
         """Build the change a single new event makes, if it makes one."""
         raise NotImplementedError
+
+    def accumulate(self, event: Event) -> None:
+        """Update this widget's own state from a new event, if it persists anything."""
+
+    def snapshot(self) -> dict[str, Any] | None:
+        """This widget's current state to persist, or `None` if it isn't persisting."""
+        return None
+
+    def restore(self, data: dict[str, Any]) -> None:
+        """Seed this widget's state from a previously persisted snapshot."""
 
 
 def build(name: str, *, type: str = "line", **options: Any) -> Widget:

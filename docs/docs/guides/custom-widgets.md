@@ -42,6 +42,48 @@ class Gauge(Widget):
 
 `update(event)` builds a single incremental change, and only matters for `op = "append"` widgets. Gauge replaces the whole card, so it doesn't need one. Look at [LineChart][dachshund.LineChart]'s source for what an `append` widget's `update()` looks like.
 
+## Persisting it
+
+Right now Gauge only knows what `events` it's handed, which is the recent, windowed history. Nothing stops it from keeping its own state that survives a restart, the same way [BarChart][dachshund.BarChart]'s `persist` does. Three more hooks, all optional:
+
+```python
+    persist: bool = False
+
+    last: float | None = field(default=None, init=False, repr=False, compare=False)
+
+    def accumulate(self, event):
+        if not self.persist:
+            return
+        value = self.value(event, self.y)
+        if value is not None:
+            self.last = value
+
+    def snapshot(self):
+        return {"last": self.last} if self.persist else None
+
+    def restore(self, data):
+        self.last = data.get("last")
+```
+
+`render()` reads `self.last` instead of `events` when persisting:
+
+```python
+    def render(self, events):
+        value = self.last if self.persist else (self.value(events[-1], self.y) if events else None)
+        return {"value": value}
+```
+
+This needs a `Storage` configured on the dashboard, the same as any persisting widget:
+
+```python
+from dachshund.storage.state import SQLiteStorage
+
+dashboard = dachshund.Dashboard(storage=SQLiteStorage("widget_state.db"))
+dashboard.widget("cpu", type="gauge", persist=True)
+```
+
+`persist` isn't a `BarChart` concept, it just happens to be the built-in widget that already uses it. `accumulate`/`snapshot`/`restore` are plain `Widget` hooks, any widget, built-in or your own, can implement them the same way.
+
 ## Using it
 
 Once the module defining `Gauge` has been imported, it's usable like any built-in widget:

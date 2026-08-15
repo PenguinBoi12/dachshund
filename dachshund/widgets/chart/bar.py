@@ -1,4 +1,4 @@
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import KW_ONLY, dataclass, field
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
@@ -30,12 +30,30 @@ class BarChart(Widget):
     dachshund.chart("load", type="bar", x="name", y="ms", source="on_command")
     dachshund.emit("on_command", name="/ban", ms=96)
     ```
+
+    With `persist=True`, totals survive a restart instead of only covering
+    the events currently kept. This needs `storage=...` configured on the
+    dashboard first, there's no default:
+
+    ```python
+    dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    dashboard.emit("commands", name="/ban", value=1)
+    ```
     """
 
     _: KW_ONLY
 
     x: str
     y: str = "value"
+    persist: bool = False
+
+    totals: dict[str, float] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     type: ClassVar[str] = "bar"
     op: ClassVar[str] = "replace"
@@ -46,18 +64,25 @@ class BarChart(Widget):
         return (self.y,)
 
     def render(self, events: Sequence[Event]) -> dict[str, Any]:
-        """Total every event into the bar of its category."""
-        totals: dict[str, float] = {}
+        """Total every event into the bar of its category.
 
-        for event in events:
-            value = self.value(event, self.y)
+        A persisting chart reads its own kept totals instead, since those
+        cover more than whatever events are still around to re-total.
+        """
+        if self.persist:
+            totals = self.totals
+        else:
+            totals = {}
 
-            # A gap has no meaning in a total, so it is left out of one.
-            if value is None:
-                continue
+            for event in events:
+                value = self.value(event, self.y)
 
-            category = self.category(event)
-            totals[category] = totals.get(category, 0.0) + value
+                # A gap has no meaning in a total, so it is left out of one.
+                if value is None:
+                    continue
+
+                category = self.category(event)
+                totals[category] = totals.get(category, 0.0) + value
 
         return {
             "series": list(self.series),
@@ -68,3 +93,24 @@ class BarChart(Widget):
     def category(self, event: Event) -> str:
         """Which bar the event belongs to."""
         return str(event.payload.get(self.x, UNLABELLED))
+
+    def accumulate(self, event: Event) -> None:
+        """Fold one more event into the kept totals, if persisting."""
+        if not self.persist:
+            return
+
+        value = self.value(event, self.y)
+
+        if value is None:
+            return
+
+        category = self.category(event)
+        self.totals[category] = self.totals.get(category, 0.0) + value
+
+    def snapshot(self) -> dict[str, Any] | None:
+        """The kept totals, or `None` when this chart isn't persisting."""
+        return {"totals": self.totals} if self.persist else None
+
+    def restore(self, data: dict[str, Any]) -> None:
+        """Pick up where the last persisted snapshot left off."""
+        self.totals = dict(data.get("totals", {}))
