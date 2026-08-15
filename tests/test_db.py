@@ -27,6 +27,35 @@ def test_migrate__expect_the_scripts_applied_in_order(tmp_path: Path) -> None:
     assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
+def test_setup__expect_a_migrated_wal_connection(tmp_path: Path) -> None:
+    connection, executor = db.setup(
+        str(tmp_path / "test.db"), ["CREATE TABLE a (id INTEGER)"]
+    )
+
+    try:
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "a" in tables
+    finally:
+        executor.shutdown()
+
+
+def test_setup_without_migrations__expect_the_version_untouched(tmp_path: Path) -> None:
+    connection, executor = db.setup(str(tmp_path / "test.db"))
+
+    try:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 0
+    finally:
+        executor.shutdown()
+
+
 def test_migrate_of_an_up_to_date_connection__expect_nothing_reapplied(
     tmp_path: Path,
 ) -> None:

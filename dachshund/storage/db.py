@@ -1,5 +1,30 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence
+
+
+def setup(
+    path: str, migrations: Sequence[str] = ()
+) -> tuple[sqlite3.Connection, ThreadPoolExecutor]:
+    """Own a WAL connection and the single-worker executor that runs it.
+
+    Every store built on top of this needs the same pair (a connection only
+    ever touched from one OS thread, migrated to whatever schema it owns);
+    this is that boilerplate, written once.
+
+    ## Example
+
+    ```python
+    connection, executor = setup("dachshund.db", events.MIGRATIONS)
+    ```
+    """
+    executor = ThreadPoolExecutor(max_workers=1)
+    connection = executor.submit(connect, path).result()
+
+    if migrations:
+        executor.submit(migrate, connection, migrations).result()
+
+    return connection, executor
 
 
 def connect(path: str) -> sqlite3.Connection:

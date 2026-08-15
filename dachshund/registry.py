@@ -2,7 +2,6 @@ import atexit
 import logging
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
@@ -65,12 +64,7 @@ class Dashboard:
         self.widgets: dict[str, Widget] = {}
         self.dropped = 0
 
-        # A single worker, so EventStore always runs on the same OS thread,
-        # whatever an async caller awaits it from.
-        self._executor = ThreadPoolExecutor(max_workers=1)
-        self._connection = self._executor.submit(db.connect, path).result()
-        self._executor.submit(db.migrate, self._connection, EVENTS_MIGRATIONS).result()
-
+        self._connection, self._executor = db.setup(path, EVENTS_MIGRATIONS)
         self.events = EventStore(self._connection, self._executor)
 
         # No default: a persisting widget's state is a deliberate choice,

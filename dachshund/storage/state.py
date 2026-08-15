@@ -1,6 +1,5 @@
 import asyncio
 import json
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from dachshund.storage import db
@@ -31,9 +30,7 @@ class SQLiteStorage:
     """
 
     def __init__(self, path: str) -> None:
-        self._executor = ThreadPoolExecutor(max_workers=1)
-        self._connection = self._executor.submit(db.connect, path).result()
-        self._executor.submit(db.migrate, self._connection, MIGRATIONS).result()
+        self._connection, self._executor = db.setup(path, MIGRATIONS)
 
     async def save(self, key: str, value: dict[str, Any]) -> None:
         """Replace whatever was kept under a key."""
