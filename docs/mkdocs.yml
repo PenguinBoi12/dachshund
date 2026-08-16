@@ -79,6 +79,7 @@ nav:
       - Time Series Chart: reference/timeseries-chart.md
       - Line Chart: reference/line-chart.md
       - Bar Chart: reference/bar-chart.md
+      - Number: reference/number.md
       - Events: reference/events.md
       - Runtime: reference/runtime.md
       - Storage: reference/storage.md

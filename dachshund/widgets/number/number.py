@@ -10,12 +10,13 @@ from dachshund.widgets.base import Widget
 class Number(Widget):
     """The latest number from its source, big.
 
-    `y` names the field read and defaults to `value`.
+    `y` names the field read and defaults to `value`. `unit` is shown next to
+    the number, unscaled, e.g. `"ms"` or `"%"`.
 
     ## Example
 
     ```python
-    dachshund.chart("cpu", type="number", title="CPU Load")
+    dachshund.chart("cpu", type="number", title="CPU Load", unit="%")
     dachshund.emit("cpu", value=42)
     ```
     """
@@ -23,6 +24,7 @@ class Number(Widget):
     _: KW_ONLY
 
     y: str = "value"
+    unit: str | None = None
 
     type: ClassVar[str] = "number"
     op: ClassVar[str] = "replace"
@@ -31,4 +33,7 @@ class Number(Widget):
 
     def render(self, events: Sequence[Event]) -> dict[str, Any]:
         """The most recent reading of `y`, or `None` before anything arrives."""
-        return {"value": self.value(events[-1], self.y) if events else None}
+        return {
+            "value": self.value(events[-1], self.y) if events else None,
+            "unit": self.unit,
+        }

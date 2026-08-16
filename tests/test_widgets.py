@@ -9,6 +9,7 @@ from dachshund.widgets.base import WIDGETS, Widget, build
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
+from dachshund.widgets.number.number import Number
 
 FIXTURE_SCRIPT = Path(__file__).parent / "fixtures" / "gauge.js"
 
@@ -27,6 +28,7 @@ def test_builtin_chart_types__expect_them_registered() -> None:
     assert WIDGETS["bar"] is BarChart
     assert WIDGETS["line"] is LineChart
     assert WIDGETS["timeseries"] is TimeSeriesChart
+    assert WIDGETS["number"] is Number
 
 
 def test_a_widget_subclass__expect_it_registered_under_its_type() -> None:
@@ -346,4 +348,53 @@ def test_bar_render_with_persist__expect_the_kept_totals_not_the_events() -> Non
         "series": ["value"],
         "x": ["/ban"],
         "y": [[4.0]],
+    }
+
+
+def test_number_type_and_op__expect_a_full_replace() -> None:
+    assert (Number.type, Number.op) == ("number", "replace")
+
+
+def test_number_script_and_style__expect_them_set() -> None:
+    assert Number.script is not None and Number.script.is_file()
+    assert Number.style is not None and Number.style.is_file()
+
+
+def test_number_render_without_events__expect_no_value() -> None:
+    widget = Number("highest_latency", source="highest_latency")
+
+    assert widget.render([]) == {"value": None, "unit": None}
+
+
+def test_number_render__expect_the_latest_event_not_a_total() -> None:
+    widget = Number("highest_latency", source="highest_latency")
+    events = [
+        Event("highest_latency", {"value": 96}),
+        Event("highest_latency", {"value": 108}),
+    ]
+
+    assert widget.render(events) == {"value": 108.0, "unit": None}
+
+
+def test_number_render_with_a_custom_field__expect_it_read_instead() -> None:
+    widget = Number("cpu", source="cpu", y="load")
+
+    assert widget.render([Event("cpu", {"load": 42})]) == {"value": 42.0, "unit": None}
+
+
+def test_number_render_with_an_unreadable_value__expect_no_value() -> None:
+    widget = Number("highest_latency", source="highest_latency")
+
+    assert widget.render([Event("highest_latency", {"value": "fast"})]) == {
+        "value": None,
+        "unit": None,
+    }
+
+
+def test_number_render_with_a_unit__expect_it_carried_through() -> None:
+    widget = Number("highest_latency", source="highest_latency", unit="ms")
+
+    assert widget.render([Event("highest_latency", {"value": 96})]) == {
+        "value": 96.0,
+        "unit": "ms",
     }

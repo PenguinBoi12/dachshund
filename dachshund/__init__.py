@@ -22,12 +22,14 @@ from dachshund.widgets.base import Widget
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
+from dachshund.widgets.number.number import Number
 
 __all__ = [
     "BarChart",
     "Dashboard",
     "Event",
     "LineChart",
+    "Number",
     "Runtime",
     "TimeSeriesChart",
     "Widget",

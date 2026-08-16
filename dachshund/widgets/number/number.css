@@ -1,0 +1,28 @@
+.card-content.number {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+}
+
+.number-reading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.number-value {
+  font-family: var(--font-ui);
+  font-size: 128px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+}
+
+.number-unit {
+  font-family: var(--font-ui);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
