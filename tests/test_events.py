@@ -1,16 +1,37 @@
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from dachshund.storage import db
-from dachshund.storage.events import MIGRATIONS, Event, EventStore
+from dachshund.storage.events import (
+    COMPACT_INTERVAL,
+    MIGRATIONS,
+    ROLLUP_BUCKET,
+    Event,
+    EventStore,
+)
 
 
-def make_store(path: Path, *, limit: int = 500) -> EventStore:
+def make_store(
+    path: Path,
+    *,
+    limit: int = 500,
+    retention: float = 1800.0,
+    bucket: float = ROLLUP_BUCKET,
+    compact_interval: float = COMPACT_INTERVAL,
+) -> EventStore:
     connection, executor = db.setup(str(path), MIGRATIONS)
 
-    return EventStore(connection, executor, limit=limit)
+    return EventStore(
+        connection,
+        executor,
+        limit=limit,
+        retention=retention,
+        bucket=bucket,
+        compact_interval=compact_interval,
+    )
 
 
 @pytest.fixture
@@ -112,3 +133,105 @@ async def test_a_second_connection_to_the_same_file__expect_the_events_kept(
 
     assert row is not None
     assert row[0] == "latency"
+
+
+@pytest.mark.asyncio
+async def test_compact_of_old_events__expect_the_raw_rows_deleted_and_a_rollup_row_inserted(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
+
+    await store.append([Event("latency", {"value": 10}, at=old)])
+    await store.compact()
+
+    reopened = db.connect(str(path))
+    raw = reopened.execute("SELECT * FROM events").fetchall()
+    rollups = reopened.execute(
+        "SELECT source, payload, count FROM event_rollups"
+    ).fetchall()
+
+    assert raw == []
+    assert rollups == [("latency", json.dumps({"value": 10.0}), 1)]
+
+
+@pytest.mark.asyncio
+async def test_compact__expect_the_rollup_payload_averaged(tmp_path: Path) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
+
+    await store.append(
+        [
+            Event("latency", {"value": 10}, at=old),
+            Event("latency", {"value": 20}, at=old),
+        ]
+    )
+    await store.compact()
+
+    reopened = db.connect(str(path))
+    rollups = reopened.execute("SELECT payload, count FROM event_rollups").fetchall()
+
+    assert rollups == [(json.dumps({"value": 15.0}), 2)]
+
+
+@pytest.mark.asyncio
+async def test_compact_with_a_non_numeric_field__expect_it_dropped(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(seconds=1)
+
+    await store.append([Event("latency", {"value": 10, "label": "ok"}, at=old)])
+    await store.compact()
+
+    reopened = db.connect(str(path))
+    payload = reopened.execute("SELECT payload FROM event_rollups").fetchone()[0]
+
+    assert json.loads(payload) == {"value": 10.0}
+
+
+@pytest.mark.asyncio
+async def test_compact_before_the_interval_elapses__expect_the_second_call_a_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = make_store(tmp_path / "events.db", retention=0.0)
+    calls = []
+    monkeypatch.setattr(store, "_compact", lambda: calls.append(None))
+
+    await store.compact()
+    await store.compact()
+
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_events_after_compaction__expect_raw_and_rollup_merged_oldest_first(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db", retention=0.0)
+    now = datetime.now(tz=timezone.utc)
+    old = now - timedelta(minutes=5)
+
+    await store.append([Event("latency", {"value": 1}, at=old)])
+    await store.compact()
+    await store.append([Event("latency", {"value": 2}, at=now)])
+
+    events = await store.events("latency")
+
+    assert [event.payload for event in events] == [{"value": 1.0}, {"value": 2}]
+
+
+@pytest.mark.asyncio
+async def test_events_when_raw_alone_fills_the_limit__expect_rollups_untouched(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db", limit=2)
+
+    await store.append([Event("latency", {"value": value}) for value in (1, 2, 3)])
+
+    events = await store.events("latency")
+
+    assert [event.payload["value"] for event in events] == [2, 3]

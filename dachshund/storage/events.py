@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -11,7 +12,12 @@ from dachshund.storage import db
 DEFAULT_LIMIT = 500
 DEFAULT_PATH = "dachshund.db"
 
-MIGRATIONS = ["""
+RAW_RETENTION = 1800.0
+ROLLUP_BUCKET = 60.0
+COMPACT_INTERVAL = 60.0
+
+MIGRATIONS = [
+    """
     CREATE TABLE events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
@@ -19,7 +25,18 @@ MIGRATIONS = ["""
         at REAL NOT NULL
     );
     CREATE INDEX idx_events_source_at ON events (source, at);
-    """]
+    """,
+    """
+    CREATE TABLE event_rollups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        bucket_start REAL NOT NULL,
+        payload TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        UNIQUE (source, bucket_start)
+    );
+    """,
+]
 
 
 @dataclass(frozen=True)
@@ -52,10 +69,17 @@ class EventStore:
         executor: ThreadPoolExecutor,
         *,
         limit: int = DEFAULT_LIMIT,
+        retention: float = RAW_RETENTION,
+        bucket: float = ROLLUP_BUCKET,
+        compact_interval: float = COMPACT_INTERVAL,
     ) -> None:
         self._connection = connection
         self._executor = executor
         self.limit = limit
+        self.retention = retention
+        self.bucket = bucket
+        self.compact_interval = compact_interval
+        self._last_compact = 0.0
         self._closed = False
 
     def close(self) -> None:
@@ -89,6 +113,28 @@ class EventStore:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._select, source)
 
+    async def compact(self) -> None:
+        """Fold raw events older than `retention` into rollup buckets.
+
+        A no-op unless `compact_interval` has elapsed since the last call,
+        so it's safe to call on every pump tick.
+
+        ## Example
+
+        ```python
+        await store.compact()
+        ```
+        """
+        now = time.monotonic()
+
+        if now - self._last_compact < self.compact_interval:
+            return
+
+        self._last_compact = now
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self._executor, self._compact)
+
     def _insert(self, events: Sequence[Event]) -> None:
         rows = [
             (event.source, json.dumps(event.payload), event.at.timestamp())
@@ -100,20 +146,76 @@ class EventStore:
         self._connection.commit()
 
     def _select(self, source: str) -> list[Event]:
-        rows = self._connection.execute(
-            "SELECT source, payload, at FROM events "
+        raw = self._connection.execute(
+            "SELECT payload, at FROM events "
             "WHERE source = ? ORDER BY at DESC LIMIT ?",
+            (source, self.limit),
+        ).fetchall()
+
+        rollups = self._connection.execute(
+            "SELECT payload, bucket_start FROM event_rollups "
+            "WHERE source = ? ORDER BY bucket_start DESC LIMIT ?",
             (source, self.limit),
         ).fetchall()
 
         events = [
             Event(
-                source=row[0],
-                payload=json.loads(row[1]),
-                at=datetime.fromtimestamp(row[2], tz=timezone.utc),
+                source, json.loads(payload), datetime.fromtimestamp(at, tz=timezone.utc)
             )
-            for row in rows
+            for payload, at in raw
+        ] + [
+            Event(
+                source,
+                json.loads(payload),
+                datetime.fromtimestamp(bucket_start + self.bucket / 2, tz=timezone.utc),
+            )
+            for payload, bucket_start in rollups
         ]
-        events.reverse()
+        events.sort(key=lambda event: event.at)
 
-        return events
+        return events[-self.limit :]
+
+    def _compact(self) -> None:
+        cutoff = time.time() - self.retention
+
+        rows = self._connection.execute(
+            "SELECT source, payload, at FROM events WHERE at < ?", (cutoff,)
+        ).fetchall()
+
+        if not rows:
+            return
+
+        buckets: dict[tuple[str, float], list[dict[str, Any]]] = {}
+
+        for source, payload, at in rows:
+            bucket_start = at - (at % self.bucket)
+            buckets.setdefault((source, bucket_start), []).append(json.loads(payload))
+
+        for (source, bucket_start), payloads in buckets.items():
+            self._connection.execute(
+                "INSERT INTO event_rollups (source, bucket_start, payload, count) "
+                "VALUES (?, ?, ?, ?)",
+                (source, bucket_start, json.dumps(_average(payloads)), len(payloads)),
+            )
+
+        self._connection.execute("DELETE FROM events WHERE at < ?", (cutoff,))
+        self._connection.commit()
+
+
+def _average(payloads: Sequence[dict[str, Any]]) -> dict[str, float]:
+    from dachshund.widgets.value import numeric
+
+    totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
+
+    for payload in payloads:
+        for key, raw in payload.items():
+            value = numeric(raw)
+
+            if value is None:
+                continue
+
+            totals[key] = totals.get(key, 0.0) + value
+            counts[key] = counts.get(key, 0) + 1
+
+    return {key: total / counts[key] for key, total in totals.items()}

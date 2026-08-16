@@ -143,6 +143,7 @@ async def pump(app: web.Application) -> None:
         try:
             events = dashboard.drain()
             await dashboard.events.append(events)
+            await dashboard.events.compact()
             await broadcast(app, await updates(dashboard, events))
         except Exception:
             logger.exception("Dropped a batch of dashboard updates.")
