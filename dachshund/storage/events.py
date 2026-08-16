@@ -176,7 +176,8 @@ class EventStore:
         return events[-self.limit :]
 
     def _compact(self) -> None:
-        cutoff = time.time() - self.retention
+        boundary = time.time() - self.retention
+        cutoff = boundary - (boundary % self.bucket)
 
         rows = self._connection.execute(
             "SELECT source, payload, at FROM events WHERE at < ?", (cutoff,)
@@ -192,14 +193,48 @@ class EventStore:
             buckets.setdefault((source, bucket_start), []).append(json.loads(payload))
 
         for (source, bucket_start), payloads in buckets.items():
+            payload = _average(payloads)
+            count = len(payloads)
+
+            existing = self._connection.execute(
+                "SELECT payload, count FROM event_rollups "
+                "WHERE source = ? AND bucket_start = ?",
+                (source, bucket_start),
+            ).fetchone()
+
+            if existing is not None:
+                old_payload, old_count = json.loads(existing[0]), existing[1]
+                payload = _merge(old_payload, old_count, payload, count)
+                count += old_count
+
             self._connection.execute(
                 "INSERT INTO event_rollups (source, bucket_start, payload, count) "
-                "VALUES (?, ?, ?, ?)",
-                (source, bucket_start, json.dumps(_average(payloads)), len(payloads)),
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (source, bucket_start) DO UPDATE SET "
+                "payload = excluded.payload, count = excluded.count",
+                (source, bucket_start, json.dumps(payload), count),
             )
 
         self._connection.execute("DELETE FROM events WHERE at < ?", (cutoff,))
         self._connection.commit()
+
+
+def _merge(
+    old: dict[str, float], old_count: int, new: dict[str, float], new_count: int
+) -> dict[str, float]:
+    merged = {}
+
+    for key in old.keys() | new.keys():
+        if key not in new:
+            merged[key] = old[key]
+        elif key not in old:
+            merged[key] = new[key]
+        else:
+            merged[key] = (old[key] * old_count + new[key] * new_count) / (
+                old_count + new_count
+            )
+
+    return merged
 
 
 def _average(payloads: Sequence[dict[str, Any]]) -> dict[str, float]:
