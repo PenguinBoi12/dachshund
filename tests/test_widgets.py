@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,8 @@ from dachshund.widgets.base import WIDGETS, Widget, build
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
+
+FIXTURE_SCRIPT = Path(__file__).parent / "fixtures" / "gauge.js"
 
 
 @pytest.mark.parametrize("size", [0, 4])
@@ -41,6 +44,35 @@ def test_build_of_a_custom_type__expect_it_constructed() -> None:
 
     assert isinstance(widget, Meter)
     assert widget.source == "dial"
+
+
+def test_widget_script_and_style_default__expect_none() -> None:
+    assert Widget.script is None
+    assert Widget.style is None
+
+
+def test_a_widget_with_a_missing_script__expect_a_clear_error() -> None:
+    with pytest.raises(FileNotFoundError, match="nope.js"):
+
+        class BadGauge(Widget):
+            type = "custom_test_bad_gauge"
+            script = Path(__file__).parent / "nope.js"
+
+
+def test_a_widget_with_a_script__expect_it_registered() -> None:
+    class Gauge(Widget):
+        type = "custom_test_gauge_with_script"
+        script = FIXTURE_SCRIPT
+
+    assert WIDGETS["custom_test_gauge_with_script"].script == FIXTURE_SCRIPT
+
+
+def test_builtin_charts__expect_them_sharing_one_script_and_style() -> None:
+    # The three chart types are one cohesive rendering module, not three.
+    assert LineChart.script == BarChart.script == TimeSeriesChart.script
+    assert LineChart.style == BarChart.style == TimeSeriesChart.style
+    assert LineChart.script is not None and LineChart.script.is_file()
+    assert LineChart.style is not None and LineChart.style.is_file()
 
 
 def test_a_line_without_an_x__expect_type_error() -> None:

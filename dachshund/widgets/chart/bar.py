@@ -1,4 +1,5 @@
 from dataclasses import KW_ONLY, dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
@@ -59,6 +60,8 @@ class BarChart(Widget):
 
     type: ClassVar[str] = "bar"
     op: ClassVar[str] = "replace"
+    script: ClassVar[Path] = Path(__file__).parent / "charts.js"
+    style: ClassVar[Path] = Path(__file__).parent / "charts.css"
 
     @property
     def series(self) -> tuple[str, ...]:

@@ -9,13 +9,14 @@ import dachshund
 from dachshund.filters import FILTERS
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
-from dachshund.widgets.base import Widget
+from dachshund.widgets.base import WIDGETS, Widget
 from dachshund.runtime.ws import WS_PATH, pumping, websocket
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PACKAGE_ROOT / "templates"
 STATIC_DIR = PACKAGE_ROOT / "static"
 STATIC_PREFIX = "/_static"
+WIDGET_ASSET_PREFIX = f"{STATIC_PREFIX}/widgets"
 
 FALLBACK_NAME = "Dashboard"
 
@@ -55,6 +56,55 @@ async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
     return cards
 
 
+def _asset_urls(dashboard: Dashboard, attr: str, suffix: str) -> list[str]:
+    """URLs for one kind of widget-declared asset, deduped by file.
+
+    Several widget types can share the same script/style, the three built-in
+    chart types do, so this dedups by the resolved path rather than by
+    `type`, which would otherwise list, fetch, and execute the same file once
+    per type that points at it.
+    """
+    resolved: dict[Path, str] = {}
+
+    for widget in dashboard.widgets.values():
+        cls = type(widget)
+        path = getattr(cls, attr)
+
+        if path is not None:
+            resolved.setdefault(path, f"{WIDGET_ASSET_PREFIX}/{cls.type}{suffix}")
+
+    return list(resolved.values())
+
+
+def widget_scripts(dashboard: Dashboard) -> list[str]:
+    """The `<script>` URLs this dashboard's widgets need loaded."""
+    return _asset_urls(dashboard, "script", ".js")
+
+
+def widget_styles(dashboard: Dashboard) -> list[str]:
+    """The `<link rel="stylesheet">` URLs this dashboard's widgets need loaded."""
+    return _asset_urls(dashboard, "style", ".css")
+
+
+async def widget_file(request: web.Request, attr: str) -> web.FileResponse:
+    """Serve the file one widget type declared for `attr` ("script"/"style")."""
+    cls = WIDGETS.get(request.match_info["type"])
+    path = getattr(cls, attr, None) if cls else None
+
+    if path is None:
+        raise web.HTTPNotFound()
+
+    return web.FileResponse(path)
+
+
+async def widget_script(request: web.Request) -> web.FileResponse:
+    return await widget_file(request, "script")
+
+
+async def widget_style(request: web.Request) -> web.FileResponse:
+    return await widget_file(request, "style")
+
+
 async def index(request: web.Request) -> web.Response:
     """Render the dashboard page."""
     dashboard = request.app[DASHBOARD]
@@ -65,6 +115,8 @@ async def index(request: web.Request) -> web.Response:
         description=dashboard.description,
         started_at=dashboard.started_at,
         widgets=await cards(dashboard),
+        widget_scripts=widget_scripts(dashboard),
+        widget_styles=widget_styles(dashboard),
         version=dachshund.__version__,
         static_url=STATIC_PREFIX,
     )
@@ -93,6 +145,12 @@ def create_app(dashboard: Dashboard) -> web.Application:
 
     app.router.add_get("/", index, name="index")
     app.router.add_get(WS_PATH, websocket, name="websocket")
+    app.router.add_get(
+        f"{WIDGET_ASSET_PREFIX}/{{type}}.js", widget_script, name="widget-script"
+    )
+    app.router.add_get(
+        f"{WIDGET_ASSET_PREFIX}/{{type}}.css", widget_style, name="widget-style"
+    )
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
 
     app.cleanup_ctx.append(pumping)

@@ -1,4 +1,5 @@
 from dataclasses import KW_ONLY, dataclass
+from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
@@ -39,6 +40,8 @@ class LineChart(Widget):
 
     type: ClassVar[str] = "line"
     op: ClassVar[str] = "append"
+    script: ClassVar[Path] = Path(__file__).parent / "charts.js"
+    style: ClassVar[Path] = Path(__file__).parent / "charts.css"
 
     def __post_init__(self) -> None:
         super().__post_init__()

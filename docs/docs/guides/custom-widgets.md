@@ -13,6 +13,7 @@ Subclassing `Widget` registers it the moment the class is defined. There's no se
 
 ```python
 from dataclasses import KW_ONLY, dataclass
+from pathlib import Path
 from typing import ClassVar
 
 from dachshund import Widget
@@ -26,9 +27,10 @@ class Gauge(Widget):
 
     type: ClassVar[str] = "gauge"
     op: ClassVar[str] = "replace"
+    script: ClassVar[Path] = Path(__file__).parent / "gauge.js"
 ```
 
-`_: KW_ONLY` makes every field declared after it keyword-only, matching how the built-in charts declare their own fields. `y` names the field this gauge reads.
+`_: KW_ONLY` makes every field declared after it keyword-only, matching how the built-in charts declare their own fields. `y` names the field this gauge reads, and `script` points at the JS file that draws it, covered next.
 
 ## render()
 
@@ -97,22 +99,32 @@ dachshund.emit("cpu", value=42)
 
 ## Drawing it in the browser
 
-The Python side builds the payload. Drawing it is the client's job. `dachshund/static/dashboard.js` keeps one renderer per `type` in a `renderers` object. A renderer needs `mount(card, payload)`, which draws the card the first time and returns whatever state it needs later, plus a `replace(state, payload)` or `append(state, point)` matching the widget's `op`.
+The Python side builds the payload. Drawing it is the client's job, and it lives in `gauge.js`, next to `gauge.py`. `script` points at it; dachshund serves it, at a URL derived from `type`, and loads it before `dashboard.js` runs.
+
+A renderer registers itself with `window.Dachshund.widget(type, renderer)`, guaranteed to exist before any widget script runs. It needs `mount(card, payload)`, which draws the card the first time and returns whatever state it needs later, plus a `replace(state, payload)` or `append(state, point)` matching the widget's `op`:
 
 ```js
-const renderers = {
-  // ...
-  gauge: {
+// gauge.js
+(() => {
+  "use strict";
+
+  window.Dachshund.widget("gauge", {
     mount(card, payload) {
-      const container = card.querySelector(".card-chart");
+      const container = card.querySelector(".card-content");
       container.textContent = payload.value ?? "-";
       return { container };
     },
     replace(state, payload) {
       state.container.textContent = payload.value ?? "-";
     },
-  },
-};
+  });
+})();
 ```
 
-Every card gets a `.card-chart` div to draw into, whatever its type.
+Every card gets a `.card-content` div, whatever its type; it carries no styling beyond spacing, so a widget wanting a fixed size or its own layout adds that itself. `style: ClassVar[Path]` ships CSS the same way `script` ships JS:
+
+```python
+    style: ClassVar[Path] = Path(__file__).parent / "gauge.css"
+```
+
+The built-in chart types use this same mechanism, registered from `dachshund/widgets/chart/charts.js`, a good second example to read.

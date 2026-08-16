@@ -1,9 +1,13 @@
 import json
+from pathlib import Path
+from typing import Any, Sequence
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from dachshund.registry import Dashboard
+from dachshund.storage.events import Event
+from dachshund.widgets.base import Widget
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.runtime.http import (
     FALLBACK_NAME,
@@ -12,6 +16,8 @@ from dachshund.runtime.http import (
     create_environment,
     heading,
 )
+
+FIXTURE_SCRIPT = Path(__file__).parent / "fixtures" / "gauge.js"
 
 
 @pytest.mark.asyncio
@@ -194,3 +200,139 @@ async def test_index_with_an_unreadable_value__expect_the_page_to_survive() -> N
     assert response.status == 200
     assert "NaN" not in body
     assert "Infinity" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_without_custom_widgets__expect_no_widget_asset_tags() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "/_static/widgets/" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_custom_widget__expect_its_script_before_dashboard_js() -> (
+    None
+):
+    class Gauge(Widget):
+        type = "custom_test_http_gauge"
+        script = FIXTURE_SCRIPT
+
+        def render(self, events: Sequence[Event]) -> dict[str, Any]:
+            return {}
+
+        def update(self, event: Event) -> dict[str, Any] | None:
+            return None
+
+    dashboard = Dashboard(path=":memory:")
+    dashboard.add(Gauge("cpu", source="cpu"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    script_tag = '<script src="/_static/widgets/custom_test_http_gauge.js"></script>'
+
+    assert script_tag in body
+    assert body.index(script_tag) < body.index(
+        '<script src="/_static/dashboard.js"></script>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_with_two_instances_of_a_custom_type__expect_one_script_tag() -> (
+    None
+):
+    class Meter(Widget):
+        type = "custom_test_http_meter"
+        script = FIXTURE_SCRIPT
+
+        def render(self, events: Sequence[Event]) -> dict[str, Any]:
+            return {}
+
+        def update(self, event: Event) -> dict[str, Any] | None:
+            return None
+
+    dashboard = Dashboard(path=":memory:")
+    dashboard.add(Meter("cpu", source="cpu"))
+    dashboard.add(Meter("memory", source="memory"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert body.count("/_static/widgets/custom_test_http_meter.js") == 1
+
+
+@pytest.mark.asyncio
+async def test_index_with_the_builtin_charts__expect_one_shared_asset_pair() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("throughput", type="line", x="requests")
+    dashboard.chart("errors", type="bar", x="code")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    types = ("timeseries", "line", "bar")
+
+    assert body.count("/_static/widgets/") == 2  # one script tag, one style tag
+    assert sum(body.count(f"/_static/widgets/{t}.js") for t in types) == 1
+    assert sum(body.count(f"/_static/widgets/{t}.css") for t in types) == 1
+
+
+@pytest.mark.asyncio
+async def test_widget_script__expect_the_file_served() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/timeseries.js")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "Dachshund.widget" in body
+
+
+@pytest.mark.asyncio
+async def test_widget_style__expect_the_file_served() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/timeseries.css")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "chart-tooltip" in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["value.js", "value.css", "nope.js", "nope.css"])
+async def test_widget_asset_without_one_declared__expect_not_found(path: str) -> None:
+    # "value" isn't a registered widget type at all, and no built-in type is
+    # named "nope" either. Both should 404, not error.
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get(f"/_static/widgets/{path}")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_widget_asset_for_a_type_without_one__expect_not_found() -> None:
+    class Plain(Widget):
+        type = "custom_test_http_plain"
+
+    dashboard = Dashboard(path=":memory:")
+    dashboard.add(Plain("cpu", source="cpu"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/custom_test_http_plain.js")
+
+    assert response.status == 404

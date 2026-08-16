@@ -1,5 +1,6 @@
 import logging
 from dataclasses import KW_ONLY, dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
@@ -27,7 +28,18 @@ class Widget:
     do the same.
 
     Subclasses pair with a renderer registered under the same `type` in the
-    client's dispatch table.
+    client's dispatch table. Set `script` (and optionally `style`) to a file
+    next to the subclass's own module and dachshund serves and loads it
+    automatically. The three built-in chart types work this way too; see
+    `LineChart`/`BarChart`.
+
+    ## Example
+
+    ```python
+    class Gauge(Widget):
+        type: ClassVar[str] = "gauge"
+        script: ClassVar[Path] = Path(__file__).parent / "gauge.js"
+    ```
     """
 
     name: str
@@ -47,9 +59,19 @@ class Widget:
 
     type: ClassVar[str] = "widget"
     op: ClassVar[str] = "replace"
+    script: ClassVar[Path | None] = None
+    style: ClassVar[Path | None] = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+
+        for attr in ("script", "style"):
+            path = getattr(cls, attr)
+
+            if path is not None and not Path(path).is_file():
+                raise FileNotFoundError(
+                    f"{cls.__name__}.{attr} points at {path}, which doesn't exist."
+                )
 
         # A widget registers itself here, so a custom one needs nothing more
         # than a `type` of its own and being imported once.
