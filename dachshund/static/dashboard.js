@@ -4,6 +4,7 @@
   const POINTS = 500;
   const RECONNECT_DELAY = 2000;
   const PALETTE = 8;
+  const WHEEL_ZOOM_FACTOR = 0.75;
 
   const token = (name) =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -108,6 +109,111 @@
     tooltip.style.top = `${plot.over.offsetTop + top}px`;
   };
 
+  const widen = (bound, next) =>
+    bound && next
+      ? [Math.min(bound[0], next[0]), Math.max(bound[1], next[1])]
+      : (bound ?? next);
+
+  const clamp = (min, max, range, boundMin, boundMax, boundRange) => {
+    if (range > boundRange) return [boundMin, boundMax];
+    if (min < boundMin) return [boundMin, boundMin + range];
+    if (max > boundMax) return [boundMax - range, boundMax];
+    return [min, max];
+  };
+
+  /**
+   * Scroll to zoom, middle-drag to pan, double-click to reset. Ported from
+   * uPlot's own zoom-wheel demo (github.com/leeoniya/uPlot, demos/zoom-wheel.html),
+   * scoped to the x axis only so it composes with uPlot's built-in dblclick
+   * handler, which already resets x (not y) via autoScaleX(). Zooming y too
+   * would leave that reset partial, and would fight the bar charts' y axis
+   * always starting at zero.
+   *
+   * The demo takes its pan/zoom-out bound once, from the scale range at
+   * mount. Live charts keep streaming past that range, so here the bound
+   * widens on every setData instead of staying frozen at whatever the chart
+   * looked like on first paint.
+   */
+  const wheelZoom = (factor = WHEEL_ZOOM_FACTOR) => {
+    let bound = null;
+
+    const widenBound = (plot) => {
+      const [xs] = plot.data;
+
+      bound = widen(bound, xs.length ? [xs[0], xs[xs.length - 1]] : null);
+    };
+
+    return {
+      hooks: {
+        ready: (plot) => {
+          bound = [plot.scales.x.min, plot.scales.x.max];
+
+          const over = plot.over;
+
+          // Reserves the middle button for panning, since the left button is
+          // already claimed by uPlot's own select-drag.
+          over.addEventListener("mousedown", (event) => {
+            if (event.button !== 1) return;
+            event.preventDefault();
+
+            const left0 = event.clientX;
+            const min0 = plot.scales.x.min;
+            const max0 = plot.scales.x.max;
+            const perPixel = plot.posToVal(1, "x") - plot.posToVal(0, "x");
+
+            const onMove = (e) => {
+              e.preventDefault();
+              const dx = perPixel * (e.clientX - left0);
+              plot.setScale("x", { min: min0 - dx, max: max0 - dx });
+              plot.zoomed = true;
+            };
+
+            const onUp = () => {
+              document.removeEventListener("mousemove", onMove);
+              document.removeEventListener("mouseup", onUp);
+            };
+
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+          });
+
+          over.addEventListener("wheel", (event) => {
+            event.preventDefault();
+
+            const rect = over.getBoundingClientRect();
+            const leftPct = plot.cursor.left / rect.width;
+            const xVal = plot.posToVal(plot.cursor.left, "x");
+            const scale = event.deltaY < 0 ? factor : 1 / factor;
+
+            const [boundMin, boundMax] = bound;
+
+            let nMin = xVal - leftPct * (plot.scales.x.max - plot.scales.x.min) * scale;
+            let nMax = nMin + (plot.scales.x.max - plot.scales.x.min) * scale;
+            [nMin, nMax] = clamp(
+              nMin,
+              nMax,
+              nMax - nMin,
+              boundMin,
+              boundMax,
+              boundMax - boundMin,
+            );
+
+            plot.setScale("x", { min: nMin, max: nMax });
+            plot.zoomed = true;
+          });
+
+          // uPlot's own dblclick handler (bound alongside this one, since
+          // both listen on `over`) already runs autoScaleX() first; this
+          // only clears the flag so the next live update auto-fits again.
+          over.addEventListener("dblclick", () => {
+            plot.zoomed = false;
+          });
+        },
+        setData: widenBound,
+      },
+    };
+  };
+
   /**
    * Build a renderer from the little a chart type does differently.
    *
@@ -129,6 +235,7 @@
       height: container.clientHeight,
       legend: { show: false },
       cursor: { y: false },
+      plugins: [wheelZoom()],
       scales: { x: spec.scale(state), ...(spec.scales ?? {}) },
       axes: [
         { ...axis(), ...spec.axis(state) },
@@ -189,13 +296,14 @@
           state.data.forEach((column) => column.shift());
         }
 
-        state.chart.setData(state.data);
+        // A user mid-zoom doesn't want the next tick to snap them back out.
+        state.chart.setData(state.data, !state.chart.zoomed);
       },
 
       replace(state, payload) {
         state.labels = payload.x ?? [];
         state.data = spec.data(payload);
-        state.chart.setData(state.data);
+        state.chart.setData(state.data, !state.chart.zoomed);
       },
     };
   };
