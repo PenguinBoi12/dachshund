@@ -283,6 +283,32 @@ def test_persisting_chart_without_storage__expect_value_error() -> None:
         Dashboard(path=":memory:").chart("commands", type="bar", x="name", persist=True)
 
 
+def test_persisting_chart_registered_after_start__expect_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dashboard = Dashboard(path=":memory:", storage=FakeStorage(), port=0)
+    dashboard.start()
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="dachshund"):
+            dashboard.chart("commands", type="bar", x="name", persist=True)
+
+        assert "was registered after the dashboard started" in caplog.text
+    finally:
+        dashboard.stop()
+
+
+def test_persisting_chart_registered_before_start__expect_no_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dashboard = Dashboard(path=":memory:", storage=FakeStorage())
+
+    with caplog.at_level(logging.WARNING, logger="dachshund"):
+        dashboard.chart("commands", type="bar", x="name", persist=True)
+
+    assert "was registered after the dashboard started" not in caplog.text
+
+
 def test_chart__expect_a_line_by_default() -> None:
     graph = Dashboard(path=":memory:").chart("throughput", x="requests")
 
