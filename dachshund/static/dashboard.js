@@ -310,7 +310,7 @@
 
   const points = (index) => ({
     show: true,
-    size: 4,
+    size: 7,
     stroke: colour(index),
     fill: colour(index),
   });
