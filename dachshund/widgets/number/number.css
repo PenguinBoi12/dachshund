@@ -4,25 +4,41 @@
   align-items: center;
   justify-content: center;
   min-height: 140px;
+  overflow: hidden;
+  container-type: inline-size;
 }
 
 .number-reading {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .number-value {
   font-family: var(--font-ui);
-  font-size: 128px;
+  /* vw-based: works everywhere, so the number is never stuck at one flat
+     size on a browser that doesn't support the cqw rule below it. */
+  font-size: clamp(1.75rem, 13vw, 5rem);
+  font-size: clamp(1.75rem, 18cqw, 5rem);
   font-weight: 600;
   line-height: 1;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .number-unit {
   font-family: var(--font-ui);
-  font-size: 20px;
+  font-size: clamp(0.8rem, 2.4vw, 1.25rem);
+  font-size: clamp(0.8rem, 3.5cqw, 1.25rem);
   font-weight: 500;
   color: var(--text-muted);
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
