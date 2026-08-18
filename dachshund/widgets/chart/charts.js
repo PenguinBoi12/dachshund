@@ -4,6 +4,14 @@
   const POINTS = 500;
   const PALETTE = 8;
   const WHEEL_ZOOM_FACTOR = 0.75;
+  const DEFAULT_WINDOW = 3600; // seconds: a timeseries opens zoomed to its last hour.
+
+  const RANGES = [
+    { label: "1h", seconds: 3600 },
+    { label: "6h", seconds: 21600 },
+    { label: "24h", seconds: 86400 },
+    { label: "All", seconds: Infinity },
+  ];
 
   const token = (name) =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -131,7 +139,9 @@
    * The demo takes its pan/zoom-out bound once, from the scale range at
    * mount. Live charts keep streaming past that range, so here the bound
    * widens on every setData instead of staying frozen at whatever the chart
-   * looked like on first paint.
+   * looked like on first paint. It's also seeded from the data itself, not
+   * the initial scale range, since a timeseries opens zoomed to an hour
+   * while the data behind it can already cover much more.
    */
   const wheelZoom = (factor = WHEEL_ZOOM_FACTOR) => {
     let bound = null;
@@ -145,7 +155,7 @@
     return {
       hooks: {
         ready: (plot) => {
-          bound = [plot.scales.x.min, plot.scales.x.max];
+          widenBound(plot);
 
           const over = plot.over;
 
@@ -213,6 +223,33 @@
     };
   };
 
+  const rangePicker = (state) => {
+    const nav = document.createElement("div");
+    nav.className = "chart-ranges";
+
+    RANGES.forEach(({ label, seconds }) => {
+      const button = document.createElement("button");
+
+      button.type = "button";
+      button.textContent = label;
+      button.setAttribute("aria-pressed", String(seconds === state.window));
+
+      button.addEventListener("click", () => {
+        state.window = seconds;
+        state.chart.zoomed = false;
+        state.chart.setData(state.data, true);
+
+        nav
+          .querySelectorAll("button")
+          .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+      });
+
+      nav.appendChild(button);
+    });
+
+    return nav;
+  };
+
   /**
    * Build a renderer from the little a chart type does differently.
    *
@@ -269,6 +306,7 @@
           names: payload.series ?? ["value"],
           labels: payload.x ?? [],
           data: spec.data(payload),
+          window: spec.window,
         };
 
         state.chart = new uPlot(
@@ -283,6 +321,10 @@
             height: container.clientHeight,
           });
         }).observe(container);
+
+        if (spec.window != null) {
+          card.insertBefore(rangePicker(state), container);
+        }
 
         legend(card, state.names);
 
@@ -311,8 +353,11 @@
     };
   };
 
+  // Drawn only on hover: uPlot's cursor dot reads size/stroke/fill from
+  // here regardless of `show`, so this still styles it even though the
+  // line itself never paints one at every point.
   const points = (index) => ({
-    show: true,
+    show: false,
     size: 7,
     stroke: colour(index),
     fill: colour(index),
@@ -320,7 +365,16 @@
 
   const lines = (time) =>
     chart({
-      scale: () => ({ time }),
+      window: time ? DEFAULT_WINDOW : undefined,
+      scale: (state) => ({
+        time,
+        ...(time && {
+          range: (plot, dataMin, dataMax) =>
+            dataMax == null
+              ? [dataMin, dataMax]
+              : [Math.max(dataMin, dataMax - state.window), dataMax],
+        }),
+      }),
       axis: () => ({}),
       data: (payload) => [payload.x ?? [], ...(payload.y ?? [[]])],
       at: (state, idx) =>

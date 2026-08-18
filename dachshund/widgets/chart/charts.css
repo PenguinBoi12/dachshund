@@ -3,6 +3,35 @@
   height: 180px;
 }
 
+.chart-ranges {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.chart-ranges button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-small);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.chart-ranges button:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.chart-ranges button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--text-dim);
+}
+
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
