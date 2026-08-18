@@ -1,14 +1,18 @@
 import os
 import socket
+import time
 from collections.abc import Iterator
 from urllib.request import urlopen
 
 import pytest
 from aiohttp import web
 
+from dachshund.runtime import boot
 from dachshund.runtime.boot import Runtime
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
+
+FAILOVER_TIMEOUT = 2.0
 
 
 def build_app() -> web.Application:
@@ -53,8 +57,50 @@ def test_start_when_already_running__expect_same_port(runtime: Runtime) -> None:
     assert runtime.port == port
 
 
-def test_start_with_a_taken_port__expect_os_error(taken_port: int) -> None:
+def test_start_with_a_taken_port__expect_standing_by(taken_port: int) -> None:
     runtime = Runtime(build_app, port=taken_port)
+    runtime.start()
+
+    try:
+        assert runtime.is_running
+        assert not runtime.is_serving
+
+        with pytest.raises(RuntimeError):
+            runtime.port
+    finally:
+        runtime.stop()
+
+
+def test_start_with_a_taken_port__expect_failover_once_freed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(boot, "ELECTION_RETRY_INTERVAL", 0.05)
+
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen()
+    port = blocker.getsockname()[1]
+
+    runtime = Runtime(build_app, port=port)
+    runtime.start()
+
+    try:
+        assert not runtime.is_serving
+
+        blocker.close()  # the "winning" worker dying frees the port
+
+        deadline = time.monotonic() + FAILOVER_TIMEOUT
+        while not runtime.is_serving and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+        assert runtime.is_serving
+        assert runtime.port == port
+    finally:
+        runtime.stop()
+
+
+def test_start_with_an_unbindable_port__expect_os_error() -> None:
+    runtime = Runtime(build_app, port=1)  # privileged, not EADDRINUSE
 
     with pytest.raises(OSError):
         runtime.start()

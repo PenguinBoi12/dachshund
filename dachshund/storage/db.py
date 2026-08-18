@@ -1,6 +1,10 @@
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Sequence
+
+WAL_SWITCH_RETRIES = 20
+WAL_SWITCH_RETRY_DELAY = 0.1
 
 
 def setup(
@@ -57,7 +61,16 @@ def connect(path: str) -> sqlite3.Connection:
     ```
     """
     connection = sqlite3.connect(path)
-    connection.execute("PRAGMA journal_mode=WAL")
+
+    for attempt in range(WAL_SWITCH_RETRIES):
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError:
+            if attempt == WAL_SWITCH_RETRIES - 1:
+                raise
+            time.sleep(WAL_SWITCH_RETRY_DELAY)
+
     connection.execute("PRAGMA synchronous=NORMAL")
     connection.execute("PRAGMA busy_timeout=5000")
 

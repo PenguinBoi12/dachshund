@@ -1,8 +1,10 @@
 import asyncio
+import errno
 import logging
 import os
 import threading
 from collections.abc import Callable
+from contextlib import suppress
 
 from aiohttp import web
 
@@ -14,6 +16,7 @@ DEFAULT_PORT = 1212
 STARTUP_TIMEOUT = 10.0
 SHUTDOWN_TIMEOUT = 5.0
 CLEANUP_TIMEOUT = 2.0
+ELECTION_RETRY_INTERVAL = 2.0
 
 logger = logging.getLogger("dachshund")
 
@@ -27,6 +30,11 @@ class Runtime:
 
     It serves whatever application the factory builds, and calls the factory
     again on every start so a stopped runtime can be started back up.
+
+    Under a multi-worker server, several `Runtime`s share one host:port.
+    Only one can bind it, so a taken port doesn't fail `start()`, it stands
+    by and keeps retrying in the background, that's how a dead winner gets
+    replaced without a restart. See `is_serving`.
     """
 
     def __init__(
@@ -52,6 +60,11 @@ class Runtime:
     def port(self) -> int:
         """The port the dashboard is bound to."""
         if self._port is None:
+            if self.is_running:
+                raise RuntimeError(
+                    "This worker hasn't won the port-bind election yet, "
+                    "another worker is currently serving the dashboard."
+                )
             raise RuntimeError("The runtime is not running.")
         return self._port
 
@@ -66,6 +79,11 @@ class Runtime:
         if self._pid is not None and self._pid != os.getpid():
             return False
         return self._thread is not None and self._thread.is_alive()
+
+    @property
+    def is_serving(self) -> bool:
+        """Whether this worker currently holds the dashboard port."""
+        return self.is_running and self._port is not None
 
     def start(self) -> None:
         """Start the runtime and wait for it to accept connections."""
@@ -154,20 +172,69 @@ class Runtime:
 
         try:
             await runner.setup()
-            site = web.TCPSite(runner, self.host, self.requested_port)
-            await site.start()
-            self._port = _resolve_port(runner, self.requested_port)
         except BaseException as error:
             self._error = error
+            self._ready.set()
             await runner.cleanup()
             return
-        finally:
-            self._ready.set()
+
+        # `runner.setup()` already started the event pump, so this worker
+        # keeps persisting events below whether or not it wins the port.
+        standing_by = False
 
         try:
+            await self._try_bind(runner)
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                self._error = error
+                self._ready.set()
+                await runner.cleanup()
+                return
+
+            standing_by = True
+            logger.info(
+                "%s:%s is already taken, standing by and retrying in the "
+                "background in case the current owner goes away.",
+                self.host,
+                self.requested_port,
+            )
+
+        self._ready.set()
+
+        try:
+            while standing_by and not self._shutdown.is_set():
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        self._shutdown.wait(), ELECTION_RETRY_INTERVAL
+                    )
+
+                if self._shutdown.is_set():
+                    break
+
+                with suppress(OSError):
+                    await self._try_bind(runner)
+                    logger.info(
+                        "Won the port-bind election, now serving on %s.", self.url
+                    )
+                    break
+
             await self._shutdown.wait()
         finally:
             await runner.cleanup()
+
+    async def _try_bind(self, runner: web.AppRunner) -> None:
+        site = web.TCPSite(runner, self.host, self.requested_port)
+
+        try:
+            await site.start()
+        except OSError:
+            # `site.start()` registers with the runner before it binds, so
+            # a failed attempt has to be stopped explicitly, or it's a
+            # dead entry the runner keeps around forever.
+            await site.stop()
+            raise
+
+        self._port = _resolve_port(runner, self.requested_port)
 
 
 def _resolve_port(runner: web.AppRunner, fallback: int) -> int:

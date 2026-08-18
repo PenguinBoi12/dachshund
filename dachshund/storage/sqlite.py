@@ -5,7 +5,7 @@ from typing import Any
 from dachshund.storage import db
 
 MIGRATIONS = ["""
-    CREATE TABLE widget_state (
+    CREATE TABLE IF NOT EXISTS widget_state (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );

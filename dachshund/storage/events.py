@@ -18,16 +18,16 @@ COMPACT_INTERVAL = 60.0
 
 MIGRATIONS = [
     """
-    CREATE TABLE events (
+    CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
         payload TEXT NOT NULL,
         at REAL NOT NULL
     );
-    CREATE INDEX idx_events_source_at ON events (source, at);
+    CREATE INDEX IF NOT EXISTS idx_events_source_at ON events (source, at);
     """,
     """
-    CREATE TABLE event_rollups (
+    CREATE TABLE IF NOT EXISTS event_rollups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
         bucket_start REAL NOT NULL,
