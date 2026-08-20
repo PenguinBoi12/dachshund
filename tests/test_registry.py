@@ -97,12 +97,21 @@ class FakeStorage:
 def test_init_with_a_different_storage__expect_a_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    dachshund.default(path=":memory:")
+    dachshund.default(path=":memory:", storage=FakeStorage())
 
     with caplog.at_level(logging.WARNING, logger="dachshund"):
         dachshund.init("Ada", port=0, path=":memory:", storage=FakeStorage())
 
     assert "already set up its own storage" in caplog.text
+
+
+def test_default_storage_supplied_after_the_fact__expect_it_adopted() -> None:
+    dachshund.default(path=":memory:")
+    storage = FakeStorage()
+
+    dashboard = dachshund.default(storage=storage)
+
+    assert dashboard.storage is storage
 
 
 def test_init_from_concurrent_callers__expect_a_single_dashboard() -> None:

@@ -190,6 +190,38 @@ body {
   max-width: 60ch;
 }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.card-actions button {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  padding: 5px 11px;
+  cursor: pointer;
+}
+
+.card-actions button:hover {
+  background: var(--hover);
+}
+
+.card-actions button.action-ok {
+  border-color: var(--online);
+  color: var(--online);
+}
+
+.card-actions button.action-error {
+  border-color: var(--offline);
+  color: var(--offline);
+}
+
 @media (max-width: 720px) {
   .page,
   .colophon {

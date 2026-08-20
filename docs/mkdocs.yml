@@ -76,6 +76,7 @@ nav:
   - Reference:
       - Dashboard: reference/dashboard.md
       - Widget: reference/widget.md
+      - Actions: reference/actions.md
       - Time Series Chart: reference/timeseries-chart.md
       - Line Chart: reference/line-chart.md
       - Bar Chart: reference/bar-chart.md

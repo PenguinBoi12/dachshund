@@ -49,6 +49,7 @@ class Widget:
     source: str
     title: str | None = None
     size: int = 1
+    actions: list[str] = field(default_factory=list)
 
     warned: set[str] = field(
         default_factory=set,

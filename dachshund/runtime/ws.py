@@ -181,7 +181,8 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
 
     try:
         async for _ in client:
-            pass  # Pages only listen, anything they send is ignored.
+            # Pages only listen, anything they send is ignored.
+            pass
     finally:
         request.app[CLIENTS].discard(client)
 

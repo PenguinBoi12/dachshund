@@ -6,6 +6,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 import dachshund
+from dachshund.actions import bind_args, invoke
 from dachshund.filters import FILTERS
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
@@ -37,6 +38,17 @@ def heading(widget: Widget) -> str:
     return widget.title or widget.name.replace("_", " ")
 
 
+def action_card(dashboard: Dashboard, name: str) -> dict[str, Any]:
+    """A widget's action, as the template needs it, falling back sensibly if unregistered."""
+    action = dashboard.actions.get(name)
+
+    return {
+        "name": name,
+        "label": (action.label if action else None) or name,
+        "confirm": action.confirm if action else False,
+    }
+
+
 async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
     """Build every widget card, filled with the events kept so far."""
     cards = []
@@ -50,6 +62,7 @@ async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
                 "title": heading(widget),
                 "size": widget.size,
                 "payload": json.dumps(widget.render(kept)),
+                "actions": [action_card(dashboard, name) for name in widget.actions],
             }
         )
 
@@ -124,6 +137,35 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def run_action(request: web.Request) -> web.Response:
+    """Run an action and report what it returned, or how it failed."""
+    dashboard = request.app[DASHBOARD]
+    name = request.match_info["name"]
+    action = dashboard.actions.get(name)
+
+    if action is None:
+        return web.json_response(
+            {"ok": False, "error": f"No action named {name!r}."}, status=404
+        )
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=400)
+
+    try:
+        kwargs = bind_args(action.handler, body.get("args", {}))
+    except TypeError as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=400)
+
+    try:
+        result = await invoke(action, kwargs, dashboard.host_loop)
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+    return web.json_response({"ok": True, "result": result})
+
+
 def create_app(dashboard: Dashboard) -> web.Application:
     """Build the aiohttp application serving a dashboard.
 
@@ -151,6 +193,7 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app.router.add_get(
         f"{WIDGET_ASSET_PREFIX}/{{type}}.css", widget_style, name="widget-style"
     )
+    app.router.add_post("/_actions/{name}", run_action, name="action")
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
 
     app.cleanup_ctx.append(pumping)

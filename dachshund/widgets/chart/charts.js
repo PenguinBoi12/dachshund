@@ -4,7 +4,8 @@
   const POINTS = 500;
   const PALETTE = 8;
   const WHEEL_ZOOM_FACTOR = 0.75;
-  const DEFAULT_WINDOW = 3600; // seconds: a timeseries opens zoomed to its last hour.
+  // Seconds: a timeseries opens zoomed to its last hour.
+  const DEFAULT_WINDOW = 3600;
 
   const RANGES = [
     { label: "1h", seconds: 3600 },

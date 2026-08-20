@@ -8,6 +8,13 @@
          data-payload="{{ widget.payload }}">
   <h2 class="card-title">{{ widget.title }}</h2>
   <div class="card-content"></div>
+  {% if widget.actions %}
+  <div class="card-actions">
+    {% for action in widget.actions %}
+    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}">{{ action.label }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
 </section>
 {% else %}
 <section class="card empty span-3">

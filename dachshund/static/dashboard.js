@@ -50,5 +50,36 @@
     });
   };
 
+  const runAction = async (button) => {
+    if (button.dataset.confirm === "true" && !confirm(`Run "${button.textContent}"?`)) {
+      return;
+    }
+
+    const args = button.dataset.args ? JSON.parse(button.dataset.args) : {};
+    let ok = false;
+
+    try {
+      const response = await fetch(`/_actions/${button.dataset.action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args }),
+      });
+      ok = (await response.json()).ok;
+    } catch {
+      ok = false;
+    }
+
+    button.classList.remove("action-ok", "action-error");
+    button.classList.add(ok ? "action-ok" : "action-error");
+  };
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action]");
+
+    if (button) {
+      runAction(button);
+    }
+  });
+
   document.addEventListener("DOMContentLoaded", () => listen(mount()));
 })();

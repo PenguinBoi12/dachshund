@@ -1,12 +1,15 @@
+import asyncio
 import atexit
 import logging
 import queue
 import threading
+from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from aiohttp import web
 
+from dachshund.actions import Action
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
@@ -62,6 +65,7 @@ class Dashboard:
         self.path = path
 
         self.widgets: dict[str, Widget] = {}
+        self.actions: dict[str, Action] = {}
         self.dropped = 0
 
         self._connection, self._executor = db.setup(path, EVENTS_MIGRATIONS)
@@ -74,6 +78,8 @@ class Dashboard:
         self.runtime = Runtime(self._create_app, host=host, port=port)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
 
+        self.host_loop: asyncio.AbstractEventLoop | None = None
+
     @property
     def url(self) -> str:
         """The address the dashboard is reachable at."""
@@ -85,7 +91,15 @@ class Dashboard:
         return self.runtime.is_running
 
     def start(self) -> None:
-        """Serve the dashboard."""
+        """Serve the dashboard.
+
+        Called from a running event loop, that loop is kept as `host_loop`
+        and async action handlers run there instead of on dachshund's own
+        loop. Called from sync code, `host_loop` stays unset.
+        """
+        with suppress(RuntimeError):
+            self.host_loop = asyncio.get_running_loop()
+
         self.runtime.start()
 
     def stop(self) -> None:
@@ -149,6 +163,29 @@ class Dashboard:
         ```
         """
         return self.add(build(name, type=type, **options))
+
+    def action(
+        self, name: str, *, label: str | None = None, confirm: bool = False
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register an action the dashboard's UI can invoke.
+
+        ## Example
+
+        ```python
+        @dashboard.action("block_user", label="Block", confirm=True)
+        def block_user(user_id: str) -> dict:
+            ...
+        ```
+        """
+
+        def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
+            if name in self.actions:
+                raise ValueError(f"An action named {name!r} already exists.")
+
+            self.actions[name] = Action(name, handler, label=label, confirm=confirm)
+            return handler
+
+        return decorator
 
     def chart(
         self,
@@ -267,16 +304,21 @@ class Dashboard:
 def default(*, path: str = DEFAULT_PATH, storage: Storage | None = None) -> Dashboard:
     """The dashboard the module-level API works with.
 
-    Built on first use so widgets can be registered at import time, long
-    before `init()` starts. `path` and `storage` only matter on that first
-    use: storage is opened once, at construction, and can't be re-pointed
-    afterward.
+    Built on first use so widgets and actions can be registered at import
+    time, long before `init()` starts. `path` is fixed at that first use,
+    its connection is opened right away and can't be re-pointed afterward.
+    `storage` isn't touched until a persisting widget is added though, so
+    whichever call supplies it first, however later, is the one that sticks:
+    an action or widget registered before `init()` runs doesn't lock
+    storage out for the `init()` call that follows it.
     """
     global _dashboard
 
     with _lock:
         if _dashboard is None:
             _dashboard = Dashboard(path=path, storage=storage)
+        elif storage is not None and _dashboard.storage is None:
+            _dashboard.storage = storage
 
         return _dashboard
 
@@ -403,6 +445,26 @@ def widget(name: str, *, type: str = "line", **options: Any) -> Widget:
     ```
     """
     return default().widget(name, type=type, **options)
+
+
+def action(
+    name: str, **kwargs: Any
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Register an action, on the default dashboard.
+
+    Takes what [Dashboard.action][dachshund.registry.Dashboard.action] does.
+
+    ## Example
+
+    ```python
+    import dachshund
+
+    @dachshund.action("block_user", label="Block", confirm=True)
+    def block_user(user_id: str) -> dict:
+        ...
+    ```
+    """
+    return default().action(name, **kwargs)
 
 
 def emit(source: str, /, **fields: Any) -> None:

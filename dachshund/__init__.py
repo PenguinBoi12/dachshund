@@ -7,6 +7,7 @@ try:
 except PackageNotFoundError:
     from dachshund._version import version as __version__
 
+from dachshund.actions import Action
 from dachshund.registry import (
     Dashboard,
     default,
@@ -15,6 +16,7 @@ from dachshund.registry import (
     init,
     shutdown,
     widget,
+    action,
 )
 from dachshund.runtime.boot import Runtime
 from dachshund.storage.events import Event
@@ -25,6 +27,7 @@ from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.widgets.number.number import Number
 
 __all__ = [
+    "Action",
     "BarChart",
     "Dashboard",
     "Event",
@@ -33,6 +36,7 @@ __all__ = [
     "Runtime",
     "TimeSeriesChart",
     "Widget",
+    "action",
     "chart",
     "default",
     "emit",
