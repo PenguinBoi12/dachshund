@@ -445,6 +445,57 @@ def test_number_render_with_a_unit__expect_it_carried_through() -> None:
     }
 
 
+def test_number_accumulate_without_persist__expect_nothing_kept() -> None:
+    widget = Number("highest_latency", source="highest_latency")
+
+    widget.accumulate(Event("highest_latency", {"value": 96}))
+
+    assert widget.kept is None
+    assert widget.snapshot() is None
+
+
+def test_number_accumulate_with_persist__expect_the_reading_kept() -> None:
+    widget = Number("highest_latency", source="highest_latency", persist=True)
+
+    widget.accumulate(Event("highest_latency", {"value": 96}))
+    widget.accumulate(Event("highest_latency", {"value": 108}))
+
+    assert widget.kept == {"value": 108.0}
+    assert widget.snapshot() == {"value": 108.0}
+
+
+def test_number_accumulate_with_an_unreadable_value__expect_it_skipped() -> None:
+    widget = Number("highest_latency", source="highest_latency", persist=True)
+
+    widget.accumulate(Event("highest_latency", {"value": "fast"}))
+
+    assert widget.kept is None
+
+
+def test_number_restore__expect_the_reading_seeded() -> None:
+    widget = Number("highest_latency", source="highest_latency", persist=True)
+
+    widget.restore({"value": 96.0})
+
+    assert widget.kept == {"value": 96.0}
+
+
+def test_number_render_with_persist__expect_the_kept_reading_not_the_events() -> None:
+    widget = Number("highest_latency", source="highest_latency", persist=True)
+    widget.restore({"value": 96.0})
+
+    # A stale event, ignored: a persisting widget reads its own kept reading.
+    events = [Event("highest_latency", {"value": 1})]
+
+    assert widget.render(events) == {"value": 96.0, "unit": None}
+
+
+def test_number_render_with_persist_and_nothing_kept__expect_no_value() -> None:
+    widget = Number("highest_latency", source="highest_latency", persist=True)
+
+    assert widget.render([]) == {"value": None, "unit": None}
+
+
 def test_button_type_and_op__expect_a_full_replace() -> None:
     assert (Button.type, Button.op) == ("button", "replace")
 
