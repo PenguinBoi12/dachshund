@@ -1,6 +1,6 @@
 .card-content.number {
   display: flex;
-  flex: 1;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   min-height: 140px;

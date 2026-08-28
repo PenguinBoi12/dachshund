@@ -6,7 +6,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 import dachshund
-from dachshund.actions import bind_args, invoke
+from dachshund.actions import action_card, bind_args, invoke, resolve_row_actions
 from dachshund.filters import FILTERS
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
@@ -38,31 +38,39 @@ def heading(widget: Widget) -> str:
     return widget.title or widget.name.replace("_", " ")
 
 
-def action_card(dashboard: Dashboard, name: str) -> dict[str, Any]:
-    """A widget's action, as the template needs it, falling back sensibly if unregistered."""
-    action = dashboard.actions.get(name)
-
-    return {
-        "name": name,
-        "label": (action.label if action else None) or name,
-        "confirm": action.confirm if action else False,
-    }
-
-
 async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
-    """Build every widget card, filled with the events kept so far."""
+    """Build every widget card, filled with the events kept so far.
+
+    A widget that renders its own actions (a table, one button per row)
+    gets no card-level action row, `page.html`'s `.card-actions` block is
+    for widgets that don't place buttons themselves. Its rows get the
+    resolved `{name, label, confirm}` actions instead, so the renderer never
+    has to look up `dashboard.actions` on its own.
+    """
     cards = []
 
     for widget in dashboard.widgets.values():
         kept = await dashboard.events.events(widget.source)
+        payload = (
+            await widget.page(kept, None, dashboard.context, dashboard.host_loop)
+            if widget.paginated
+            else widget.render(kept)
+        )
+        resolve_row_actions(dashboard.actions, widget, payload)
+
         cards.append(
             {
                 "name": widget.name,
                 "type": widget.type,
                 "title": heading(widget),
                 "size": widget.size,
-                "payload": json.dumps(widget.render(kept)),
-                "actions": [action_card(dashboard, name) for name in widget.actions],
+                "payload": json.dumps(payload),
+                "actions": []
+                if widget.renders_own_actions
+                else [
+                    action_card(dashboard.actions, name, widget.action_args.get(name))
+                    for name in widget.actions
+                ],
             }
         )
 
@@ -118,6 +126,22 @@ async def widget_style(request: web.Request) -> web.FileResponse:
     return await widget_file(request, "style")
 
 
+async def widget_page(request: web.Request) -> web.Response:
+    """One page of a paginated widget's current rows, after `?cursor=`."""
+    dashboard = request.app[DASHBOARD]
+    widget = dashboard.widgets.get(request.match_info["name"])
+
+    if widget is None or not widget.paginated:
+        raise web.HTTPNotFound()
+
+    cursor = request.query.get("cursor")
+    kept = await dashboard.events.events(widget.source)
+    payload = await widget.page(kept, cursor, dashboard.context, dashboard.host_loop)
+    resolve_row_actions(dashboard.actions, widget, payload)
+
+    return web.json_response(payload)
+
+
 async def index(request: web.Request) -> web.Response:
     """Render the dashboard page."""
     dashboard = request.app[DASHBOARD]
@@ -159,7 +183,7 @@ async def run_action(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": str(exc)}, status=400)
 
     try:
-        result = await invoke(action, kwargs, dashboard.host_loop)
+        result = await invoke(action, kwargs, dashboard.context, dashboard.host_loop)
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
@@ -194,6 +218,7 @@ def create_app(dashboard: Dashboard) -> web.Application:
         f"{WIDGET_ASSET_PREFIX}/{{type}}.css", widget_style, name="widget-style"
     )
     app.router.add_post("/_actions/{name}", run_action, name="action")
+    app.router.add_get("/_widgets/{name}/page", widget_page, name="widget-page")
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
 
     app.cleanup_ctx.append(pumping)

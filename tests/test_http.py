@@ -1,4 +1,6 @@
+import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -325,6 +327,102 @@ async def test_widget_asset_without_one_declared__expect_not_found(path: str) ->
 
 
 @pytest.mark.asyncio
+async def test_cards_with_a_table__expect_each_row_carrying_resolved_actions() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    dashboard.widget("sessions", type="table", columns=["user"], actions=["ban"])
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.drain())
+
+    card = (await cards(dashboard))[0]
+    payload = json.loads(card["payload"])
+
+    assert card["actions"] == []
+    assert payload["rows"][0]["actions"] == [
+        {"name": "ban", "label": "Ban", "confirm": True, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cards_with_a_table_and_an_unregistered_action__expect_a_sensible_fallback() -> (
+    None
+):
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"], actions=["nope"])
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.drain())
+
+    payload = json.loads((await cards(dashboard))[0]["payload"])
+
+    assert payload["rows"][0]["actions"] == [
+        {"name": "nope", "label": "nope", "confirm": False, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_table__expect_no_card_level_action_row() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    dashboard.widget("sessions", type="table", columns=["user"], actions=["ban"])
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "card-actions" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_button__expect_the_card_level_action_row() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ping", label="Ping")(lambda ctx: None)
+    dashboard.widget("ping", type="button", actions=["ping"])
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "card-actions" in body
+    assert 'data-action="ping"' in body
+
+
+@pytest.mark.asyncio
+async def test_cards_with_action_args__expect_them_on_the_card_level_action() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("block_user")(lambda ctx, user_id: None)
+    dashboard.widget(
+        "last_signup",
+        type="button",
+        actions=["block_user"],
+        action_args={"block_user": {"user_id": "42"}},
+    )
+
+    card = (await cards(dashboard))[0]
+
+    assert card["actions"] == [
+        {"name": "block_user", "label": "block_user", "confirm": False, "args": {"user_id": "42"}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_index_with_action_args__expect_them_rendered_as_data_args() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("block_user")(lambda ctx, user_id: None)
+    dashboard.widget(
+        "last_signup",
+        type="button",
+        actions=["block_user"],
+        action_args={"block_user": {"user_id": "42"}},
+    )
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert 'data-args="{&#34;user_id&#34;: &#34;42&#34;}"' in body
+
+
+@pytest.mark.asyncio
 async def test_widget_asset_for_a_type_without_one__expect_not_found() -> None:
     class Plain(Widget):
         type = "custom_test_http_plain"
@@ -336,3 +434,127 @@ async def test_widget_asset_for_a_type_without_one__expect_not_found() -> None:
         response = await client.get("/_static/widgets/custom_test_http_plain.js")
 
     assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_widget_page__expect_the_first_page_with_a_next_cursor() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"], key="user")
+    for i in range(6):
+        dashboard.emit("sessions", user=f"user{i}")
+    await dashboard.events.append(dashboard.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/sessions/page")
+        payload = await response.json()
+
+    assert response.status == 200
+    assert len(payload["rows"]) == 5
+    assert payload["next_cursor"] == "user4"
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_cursor__expect_the_slice_after_it_with_resolved_actions() -> (
+    None
+):
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    dashboard.widget(
+        "sessions", type="table", columns=["user"], key="user", actions=["ban"]
+    )
+    for i in range(6):
+        dashboard.emit("sessions", user=f"user{i}")
+    await dashboard.events.append(dashboard.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/sessions/page?cursor=user4")
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload["next_cursor"] is None
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["actions"] == [
+        {"name": "ban", "label": "Ban", "confirm": True, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_stale_cursor__expect_it_restarted() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"], key="user")
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/sessions/page?cursor=nope")
+        payload = await response.json()
+
+    assert [row["fields"]["user"] for row in payload["rows"]] == ["ada"]
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_loader__expect_its_rows_and_host_loop() -> None:
+    host_loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=host_loop.run_forever, daemon=True)
+    thread.start()
+
+    seen_loop = None
+    seen_ctx = None
+
+    async def load(ctx, cursor: str | None, page_size: int) -> tuple[list[dict], str | None]:
+        nonlocal seen_loop, seen_ctx
+        seen_loop = asyncio.get_running_loop()
+        seen_ctx = ctx
+        return [{"user": "ada"}], None
+
+    dashboard = Dashboard(path=":memory:", context={"bot": "b"})
+    dashboard.widget("sessions", type="table", columns=["user"], loader=load)
+    dashboard.host_loop = host_loop
+
+    try:
+        async with TestClient(TestServer(create_app(dashboard))) as client:
+            response = await client.get("/_widgets/sessions/page")
+            payload = await response.json()
+    finally:
+        host_loop.call_soon_threadsafe(host_loop.stop)
+        thread.join(5)
+
+    assert payload["rows"][0]["fields"] == {"user": "ada"}
+    assert seen_loop is host_loop
+    assert seen_ctx == {"bot": "b"}
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_an_unknown_widget__expect_not_found() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard(path=":memory:")))
+    ) as client:
+        response = await client.get("/_widgets/nope/page")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_a_non_paginated_widget__expect_not_found() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("commands", type="bar", x="name")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/commands/page")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"], key="user")
+    for i in range(6):
+        dashboard.emit("sessions", user=f"user{i}")
+    await dashboard.events.append(dashboard.drain())
+
+    card = (await cards(dashboard))[0]
+    payload = json.loads(card["payload"])
+
+    assert len(payload["rows"]) == 5
+    assert payload["next_cursor"] == "user4"

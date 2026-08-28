@@ -76,11 +76,14 @@ nav:
   - Reference:
       - Dashboard: reference/dashboard.md
       - Widget: reference/widget.md
+      - Keyed Widget: reference/keyed-widget.md
       - Actions: reference/actions.md
       - Time Series Chart: reference/timeseries-chart.md
       - Line Chart: reference/line-chart.md
       - Bar Chart: reference/bar-chart.md
       - Number: reference/number.md
+      - Button: reference/button.md
+      - Table: reference/table.md
       - Events: reference/events.md
       - Runtime: reference/runtime.md
       - Storage: reference/storage.md

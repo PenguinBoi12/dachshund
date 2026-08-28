@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 UNITS = (("day", 86400), ("hour", 3600), ("minute", 60))
 
@@ -65,7 +67,23 @@ def humanize(duration: timedelta) -> str:
     return "just now"
 
 
+def tojson(value: Any) -> str:
+    """A value as JSON, for embedding in an HTML attribute.
+
+    Autoescaping still runs on the result, so this is safe inside a quoted
+    attribute (`data-args="{{ value|tojson }}"`) without anything extra.
+
+    ## Example
+
+    ```html
+    <button data-args="{{ action.args|tojson }}">{{ action.label }}</button>
+    ```
+    """
+    return json.dumps(value)
+
+
 FILTERS = {
     "since": since,
     "timestamp": timestamp,
+    "tojson": tojson,
 }

@@ -195,12 +195,53 @@ async def test_compact_with_a_non_numeric_field__expect_it_dropped(
 
 
 @pytest.mark.asyncio
+async def test_compact_with_a_skipped_source__expect_no_rollup_row(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append([Event("sessions", {"user": "ada"}, at=old)])
+    await store.compact(skip_rollup=frozenset({"sessions"}))
+
+    reopened = db.connect(str(path))
+    raw = reopened.execute("SELECT * FROM events").fetchall()
+    rollups = reopened.execute("SELECT * FROM event_rollups").fetchall()
+
+    assert raw == []
+    assert rollups == []
+
+
+@pytest.mark.asyncio
+async def test_compact_with_a_skipped_source__expect_others_unaffected(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append(
+        [
+            Event("sessions", {"user": "ada"}, at=old),
+            Event("latency", {"value": 10}, at=old),
+        ]
+    )
+    await store.compact(skip_rollup=frozenset({"sessions"}))
+
+    reopened = db.connect(str(path))
+    rollups = reopened.execute("SELECT source FROM event_rollups").fetchall()
+
+    assert rollups == [("latency",)]
+
+
+@pytest.mark.asyncio
 async def test_compact_before_the_interval_elapses__expect_the_second_call_a_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = make_store(tmp_path / "events.db", retention=0.0)
     calls = []
-    monkeypatch.setattr(store, "_compact", lambda: calls.append(None))
+    monkeypatch.setattr(store, "_compact", lambda skip_rollup=frozenset(): calls.append(None))
 
     await store.compact()
     await store.compact()

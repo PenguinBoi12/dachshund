@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator
 
 from aiohttp import WSCloseCode, web
 
+from dachshund.actions import resolve_row_actions
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD
 from dachshund.storage.events import Event
@@ -74,8 +75,14 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
                 logger.exception("Could not persist %r's state.", widget.name)
 
     for widget in rebuilt.values():
+        if widget.paginated:
+            messages.append(message(widget, {}))
+            continue
+
         kept = await dashboard.events.events(widget.source)
-        messages.append(message(widget, widget.render(kept)))
+        payload = widget.render(kept)
+        resolve_row_actions(dashboard.actions, widget, payload)
+        messages.append(message(widget, payload))
 
     return messages
 
@@ -143,7 +150,14 @@ async def pump(app: web.Application) -> None:
         try:
             events = dashboard.drain()
             await dashboard.events.append(events)
-            await dashboard.events.compact()
+
+            skip_rollup = frozenset(
+                widget.source
+                for widget in dashboard.widgets.values()
+                if not widget.rollup_safe
+            )
+            await dashboard.events.compact(skip_rollup)
+
             await broadcast(app, await updates(dashboard, events))
         except Exception:
             logger.exception("Dropped a batch of dashboard updates.")

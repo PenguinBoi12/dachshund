@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import KW_ONLY, dataclass, field
 from typing import Any, ClassVar
 
@@ -8,7 +10,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
 from dachshund.runtime.keys import CLIENTS
-from dachshund.runtime.ws import WS_PATH, broadcast, hydrate, updates
+from dachshund.runtime.ws import PUMP_INTERVAL, WS_PATH, broadcast, hydrate, pump, updates
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
 
@@ -282,11 +284,11 @@ async def test_hydrate__expect_a_persisting_widget_seeded_from_storage() -> None
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
     dashboard.chart("commands", type="bar", x="name", persist=True)
     dashboard.chart("latency", type="timeseries")
-    await storage.save("commands", {"totals": {"/ban": 3}})
+    await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     await hydrate(dashboard)
 
-    assert dashboard.widgets["commands"].totals == {"/ban": 3}  # type: ignore[attr-defined]
+    assert dashboard.widgets["commands"].state.entries == {"/ban": 3}  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -300,7 +302,23 @@ async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
-    assert storage.saved["commands"] == {"totals": {"/ban": 1.0}}
+    assert storage.saved["commands"]["entries"] == {"/ban": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_persisting_table__expect_it_saved() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.widget(
+        "sessions", type="table", columns=["user"], key="user", persist=True
+    )
+
+    dashboard.emit("sessions", user="ada")
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    await updates(dashboard, events)
+
+    assert storage.saved["sessions"]["entries"] == {"ada": {"user": "ada"}}
 
 
 @pytest.mark.asyncio
@@ -360,14 +378,85 @@ async def test_hydrate_when_storage_raises__expect_the_other_widgets_still_seede
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
     dashboard.chart("broken", type="bar", x="name", persist=True)
     dashboard.chart("commands", type="bar", x="name", persist=True)
-    await storage.save("commands", {"totals": {"/ban": 3}})
+    await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     with caplog.at_level(logging.ERROR, logger="dachshund"):
         await hydrate(dashboard)
 
-    assert dashboard.widgets["commands"].totals == {"/ban": 3}  # type: ignore[attr-defined]
-    assert dashboard.widgets["broken"].totals == {}  # type: ignore[attr-defined]
+    assert dashboard.widgets["commands"].state.entries == {"/ban": 3}  # type: ignore[attr-defined]
+    assert dashboard.widgets["broken"].state.entries == {}  # type: ignore[attr-defined]
     assert "'broken'" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_paginated_widget__expect_a_content_free_ping() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"])
+
+    dashboard.emit("sessions", user="ada")
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
+
+    assert messages == [{"widget": "sessions", "op": "replace", "data": {}}]
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_paginated_widget__expect_events_not_reread() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"])
+
+    dashboard.emit("sessions", user="ada")
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+
+    async def fail(source: str) -> list[Event]:
+        raise AssertionError("a paginated widget shouldn't need its events reread")
+
+    dashboard.events.events = fail  # type: ignore[method-assign]
+
+    await updates(dashboard, events)
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("commands", type="bar", x="name")
+
+    dashboard.emit("commands", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    messages = await updates(dashboard, events)
+
+    assert messages[0]["data"]["x"] == ["/ban"]
+
+
+@pytest.mark.asyncio
+async def test_pump__expect_the_skip_set_built_from_non_rollup_safe_widgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.widget("sessions", type="table", columns=["user"])
+    dashboard.chart("latency", type="timeseries")
+    app = create_app(dashboard)
+
+    calls = []
+
+    async def fake_compact(skip_rollup: frozenset[str] = frozenset()) -> None:
+        calls.append(skip_rollup)
+
+    monkeypatch.setattr(dashboard.events, "compact", fake_compact)
+
+    task = asyncio.create_task(pump(app))
+    await asyncio.sleep(PUMP_INTERVAL * 2)
+    task.cancel()
+
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert calls
+    assert "sessions" in calls[0]
+    assert "latency" not in calls[0]
 
 
 @pytest.mark.asyncio
@@ -387,7 +476,7 @@ async def test_updates_when_storage_raises_for_one_widget__expect_the_others_una
     with caplog.at_level(logging.ERROR, logger="dachshund"):
         messages = await updates(dashboard, events)
 
-    assert storage.saved["commands"] == {"totals": {"/ban": 1.0}}
+    assert storage.saved["commands"]["entries"] == {"/ban": 1.0}
     assert "broken" not in storage.saved
     assert {message["widget"] for message in messages} == {"broken", "commands"}
     assert "'broken'" in caplog.text

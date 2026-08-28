@@ -1,15 +1,15 @@
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
-from dachshund.widgets.base import Widget
+from dachshund.widgets.state import KeyedWidget
 
 UNLABELLED = "—"
 
 
 @dataclass
-class BarChart(Widget):
+class BarChart(KeyedWidget):
     """A bar per category, totalling the events of its source.
 
     `x` names the field the categories come from and `y` what is totalled.
@@ -34,14 +34,19 @@ class BarChart(Widget):
 
     With `persist=True`, totals survive a restart instead of only covering
     the events currently kept. This needs `storage=...` configured on the
-    dashboard first, there's no default:
+    dashboard first, there's no default. A truthy `_delete` field removes a
+    category instead of adding to it:
 
     ```python
     from dachshund.storage.sqlite import SQLiteStorage
 
     dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-    dashboard.chart("commands", type="bar", x="name", persist=True)
+    commands = dashboard.chart("commands", type="bar", x="name", persist=True)
     dashboard.emit("commands", name="/ban", value=1)
+    dashboard.emit("commands", name="/ban", _delete=True)
+
+    # after a full resync (e.g. re-emitting every current category):
+    commands.sweep(before=time.time())
     ```
     """
 
@@ -49,14 +54,6 @@ class BarChart(Widget):
 
     x: str
     y: str = "value"
-    persist: bool = False
-
-    totals: dict[str, float] = field(
-        default_factory=dict,
-        init=False,
-        repr=False,
-        compare=False,
-    )
 
     type: ClassVar[str] = "bar"
     op: ClassVar[str] = "replace"
@@ -75,7 +72,7 @@ class BarChart(Widget):
         cover more than whatever events are still around to re-total.
         """
         if self.persist:
-            totals = self.totals
+            totals = self.state.entries
         else:
             totals = {}
 
@@ -100,8 +97,17 @@ class BarChart(Widget):
         return str(event.payload.get(self.x, UNLABELLED))
 
     def accumulate(self, event: Event) -> None:
-        """Fold one more event into the kept totals, if persisting."""
+        """Fold one more event into the kept totals, if persisting.
+
+        A truthy `_delete` removes the category instead of adding to it.
+        """
         if not self.persist:
+            return
+
+        category = self.category(event)
+
+        if event.payload.get("_delete"):
+            self.state.remove(category)
             return
 
         value = self.value(event, self.y)
@@ -109,13 +115,5 @@ class BarChart(Widget):
         if value is None:
             return
 
-        category = self.category(event)
-        self.totals[category] = self.totals.get(category, 0.0) + value
-
-    def snapshot(self) -> dict[str, Any] | None:
-        """The kept totals, or `None` when this chart isn't persisting."""
-        return {"totals": self.totals} if self.persist else None
-
-    def restore(self, data: dict[str, Any]) -> None:
-        """Pick up where the last persisted snapshot left off."""
-        self.totals = dict(data.get("totals", {}))
+        current = self.state.entries.get(category, 0.0)
+        self.state.upsert(category, current + value, event.at.timestamp())

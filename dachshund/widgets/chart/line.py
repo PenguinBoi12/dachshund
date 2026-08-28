@@ -42,6 +42,7 @@ class LineChart(Widget):
     op: ClassVar[str] = "append"
     script: ClassVar[Path] = Path(__file__).parent / "charts.js"
     style: ClassVar[Path] = Path(__file__).parent / "charts.css"
+    rollup_safe: ClassVar[bool] = True
 
     def __post_init__(self) -> None:
         super().__post_init__()

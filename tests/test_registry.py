@@ -60,6 +60,20 @@ def test_init_with_a_name_and_description__expect_them_kept() -> None:
     assert dashboard.description == "Code Society's Matrix bot"
 
 
+def test_init_with_context__expect_it_set() -> None:
+    dashboard = dachshund.init(port=0, path=":memory:", context={"bot": "b"})
+
+    assert dashboard.context == {"bot": "b"}
+
+
+def test_init_with_context_twice__expect_keys_merged() -> None:
+    dashboard = dachshund.init(port=0, path=":memory:", context={"bot": "b"})
+    dachshund.shutdown()
+    dachshund.init(port=0, path=":memory:", context={"db": "d"})
+
+    assert dashboard.context == {"bot": "b", "db": "d"}
+
+
 def test_init_with_another_address__expect_a_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -223,6 +237,36 @@ def test_emit_past_the_queue_size__expect_the_extras_dropped() -> None:
 
     assert dashboard.dropped == 5
     assert len(dashboard.drain()) == registry.QUEUE_SIZE
+
+
+def test_emit_past_the_queue_size__expect_one_warning_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dashboard = Dashboard(path=":memory:")
+
+    with caplog.at_level(logging.WARNING, logger="dachshund"):
+        for _ in range(registry.QUEUE_SIZE + 5):
+            dashboard.emit("latency", value=96)
+
+    assert caplog.text.count("event queue is full") == 1
+
+
+def test_emit_after_the_queue_drains__expect_a_new_streak_logged_again(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    dashboard = Dashboard(path=":memory:")
+
+    with caplog.at_level(logging.WARNING, logger="dachshund"):
+        for _ in range(registry.QUEUE_SIZE + 1):
+            dashboard.emit("latency", value=96)
+
+        dashboard.drain()
+        caplog.clear()
+
+        for _ in range(registry.QUEUE_SIZE + 1):
+            dashboard.emit("latency", value=96)
+
+    assert caplog.text.count("event queue is full") == 1
 
 
 def test_emit_from_another_thread__expect_it_queued() -> None:

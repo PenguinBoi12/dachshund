@@ -1,4 +1,5 @@
 .card-content.chart {
+  display: block;
   position: relative;
   height: 180px;
 }

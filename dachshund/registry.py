@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import inspect
 import logging
 import queue
 import threading
@@ -9,7 +10,7 @@ from typing import Any, Callable, Sequence
 
 from aiohttp import web
 
-from dachshund.actions import Action
+from dachshund.actions import Action, Context
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
@@ -55,6 +56,7 @@ class Dashboard:
         port: int = DEFAULT_PORT,
         path: str = DEFAULT_PATH,
         storage: Storage | None = None,
+        context: Context | None = None,
     ) -> None:
         if name is not None and not name.strip():
             raise ValueError("A dashboard name cannot be blank.")
@@ -67,6 +69,7 @@ class Dashboard:
         self.widgets: dict[str, Widget] = {}
         self.actions: dict[str, Action] = {}
         self.dropped = 0
+        self._dropping = False
 
         self._connection, self._executor = db.setup(path, EVENTS_MIGRATIONS)
         self.events = EventStore(self._connection, self._executor)
@@ -74,6 +77,7 @@ class Dashboard:
         # No default: a persisting widget's state is a deliberate choice,
         # not something to quietly tuck into the same file as raw events.
         self.storage = storage
+        self.context: Context = dict(context) if context else {}
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
@@ -169,11 +173,14 @@ class Dashboard:
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an action the dashboard's UI can invoke.
 
+        `handler`'s first parameter must be named `ctx`, it always receives
+        the dashboard's `context` there.
+
         ## Example
 
         ```python
         @dashboard.action("block_user", label="Block", confirm=True)
-        def block_user(user_id: str) -> dict:
+        def block_user(ctx: Context, user_id: str) -> None:
             ...
         ```
         """
@@ -181,6 +188,15 @@ class Dashboard:
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
             if name in self.actions:
                 raise ValueError(f"An action named {name!r} already exists.")
+
+            parameters = list(inspect.signature(handler).parameters)
+
+            if not parameters or parameters[0] != "ctx":
+                raise TypeError(
+                    f"{handler.__name__!r} must take `ctx` as its first "
+                    "parameter, every action handler receives the "
+                    "dashboard's context there."
+                )
 
             self.actions[name] = Action(name, handler, label=label, confirm=confirm)
             return handler
@@ -269,8 +285,18 @@ class Dashboard:
 
         try:
             self._queue.put_nowait(event)
+            self._dropping = False
         except queue.Full:
             self.dropped += 1
+
+            if not self._dropping:
+                self._dropping = True
+                logger.warning(
+                    "The event queue is full (%d slots), dropping events until "
+                    "it drains. %d dropped so far.",
+                    QUEUE_SIZE,
+                    self.dropped,
+                )
 
     def drain(self) -> list[Event]:
         """Pull every queued event off the queue, oldest first.
@@ -331,6 +357,7 @@ def init(
     port: int = DEFAULT_PORT,
     path: str = DEFAULT_PATH,
     storage: Storage | None = None,
+    context: Context | None = None,
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
@@ -338,6 +365,10 @@ def init(
     `name` unset and the dashboard falls back to a generic title; leave
     `description` unset and none is shown. Widgets registered before this
     call are kept.
+
+    `context` is merged into whatever the dashboard's `context` already
+    holds, reachable as `ctx` from every action handler, see
+    [Actions](../reference/actions.md).
 
     ## Example
 
@@ -393,6 +424,9 @@ def init(
 
         if description is not None:
             dashboard.description = description
+
+        if context is not None:
+            dashboard.context.update(context)
 
         dashboard.runtime.host = host
         dashboard.runtime.requested_port = port
@@ -460,7 +494,7 @@ def action(
     import dachshund
 
     @dachshund.action("block_user", label="Block", confirm=True)
-    def block_user(user_id: str) -> dict:
+    def block_user(ctx: dachshund.Context, user_id: str) -> None:
         ...
     ```
     """

@@ -11,7 +11,7 @@
   {% if widget.actions %}
   <div class="card-actions">
     {% for action in widget.actions %}
-    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}">{{ action.label }}</button>
+    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
     {% endfor %}
   </div>
   {% endif %}

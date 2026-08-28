@@ -7,7 +7,7 @@ try:
 except PackageNotFoundError:
     from dachshund._version import version as __version__
 
-from dachshund.actions import Action
+from dachshund.actions import Action, Context
 from dachshund.registry import (
     Dashboard,
     default,
@@ -21,19 +21,24 @@ from dachshund.registry import (
 from dachshund.runtime.boot import Runtime
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
+from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.widgets.number.number import Number
+from dachshund.widgets.table.table import Table
 
 __all__ = [
     "Action",
     "BarChart",
+    "Button",
+    "Context",
     "Dashboard",
     "Event",
     "LineChart",
     "Number",
     "Runtime",
+    "Table",
     "TimeSeriesChart",
     "Widget",
     "action",

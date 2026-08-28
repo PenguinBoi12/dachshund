@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from dachshund.filters import humanize, since, timestamp
+from dachshund.filters import humanize, since, timestamp, tojson
 from dachshund.runtime.http import create_environment
 
 
@@ -51,3 +51,15 @@ def test_timestamp_with_a_naive_datetime__expect_a_zone_shown() -> None:
     moment = datetime(2026, 8, 8, 9, 12)
 
     assert timestamp(moment).startswith("Aug 8, 2026 at 09:12 ")
+
+
+def test_tojson__expect_a_json_string() -> None:
+    assert tojson({"user_id": "42"}) == '{"user_id": "42"}'
+
+
+def test_tojson_in_a_template__expect_it_escaped_for_an_attribute() -> None:
+    template = create_environment().from_string('<b data-args="{{ value|tojson }}">')
+
+    assert template.render(value={"name": '"ada"'}) == (
+        '<b data-args="{&#34;name&#34;: &#34;\\&#34;ada\\&#34;&#34;}">'
+    )

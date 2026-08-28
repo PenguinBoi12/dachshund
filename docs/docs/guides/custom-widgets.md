@@ -84,7 +84,9 @@ dashboard = dachshund.Dashboard(storage=SQLiteStorage("widget_state.db"))
 dashboard.widget("cpu", type="gauge", persist=True)
 ```
 
-`persist` isn't a `BarChart` concept, it just happens to be the built-in widget that already uses it. `accumulate`/`snapshot`/`restore` are plain `Widget` hooks, any widget, built-in or your own, can implement them the same way.
+`accumulate`/`snapshot`/`restore` are plain `Widget` hooks; any widget, built-in or your own, can implement them the same way, as Gauge just did. That's the right choice when the state is a single value, like Gauge's `last`.
+
+When it's naturally one entry per string key instead of a single value, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] rather than writing the three hooks yourself; `Table` and `BarChart` both do.
 
 ## Using it
 

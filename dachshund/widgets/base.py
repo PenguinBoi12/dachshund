@@ -1,8 +1,10 @@
+import asyncio
 import logging
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
+from dachshund.actions import Context
 from dachshund.storage.events import Event
 from dachshund.widgets.value import numeric
 
@@ -23,15 +25,31 @@ class Widget:
 
     `accumulate`, `snapshot`, and `restore` are optional, for a widget that
     wants its own state to survive a restart, backed by whatever `Storage`
-    the dashboard is configured with. `BarChart`'s `persist` is the built-in
-    example; nothing about this is specific to bar charts, any widget can
-    do the same.
+    the dashboard is configured with. `persist` isn't declared here on
+    `Widget` itself, each widget type that supports it declares its own, so
+    building one with `persist=True` fails loudly if that type doesn't
+    support it. `Table` and `BarChart` get it from
+    [KeyedWidget][dachshund.widgets.state.KeyedWidget]; a widget shaped
+    differently implements `accumulate`/`snapshot`/`restore` on its own
+    instead.
 
     Subclasses pair with a renderer registered under the same `type` in the
     client's dispatch table. Set `script` (and optionally `style`) to a file
     next to the subclass's own module and dachshund serves and loads it
     automatically. The three built-in chart types work this way too; see
     `LineChart`/`BarChart`.
+
+    `actions` names the actions a card's buttons invoke. `action_args`
+    supplies static arguments by action name, e.g. `action_args={"ban":
+    {"user_id": "42"}}`. Set `renders_own_actions` when a widget places its
+    own buttons instead of the generic card-level row; `Table` does this,
+    merging `action_args` with each row's own fields.
+
+    `rollup_safe` opts a widget's source into `EventStore.compact`'s numeric
+    averaging past `retention`; see there for why it defaults to `False`.
+
+    `paginated` marks a widget whose rows are fetched a page at a time
+    through `page()` instead of sent whole; `Table` is the built-in example.
 
     ## Example
 
@@ -50,6 +68,7 @@ class Widget:
     title: str | None = None
     size: int = 1
     actions: list[str] = field(default_factory=list)
+    action_args: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     warned: set[str] = field(
         default_factory=set,
@@ -62,6 +81,9 @@ class Widget:
     op: ClassVar[str] = "replace"
     script: ClassVar[Path | None] = None
     style: ClassVar[Path | None] = None
+    renders_own_actions: ClassVar[bool] = False
+    rollup_safe: ClassVar[bool] = False
+    paginated: ClassVar[bool] = False
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -120,6 +142,21 @@ class Widget:
 
     def render(self, events: Sequence[Event]) -> dict[str, Any]:
         """Build the whole card from the events kept for its source."""
+        raise NotImplementedError
+
+    async def page(
+        self,
+        events: Sequence[Event],
+        cursor: str | None,
+        context: Context,
+        host_loop: asyncio.AbstractEventLoop | None = None,
+    ) -> dict[str, Any]:
+        """One page of this widget's rows, starting after `cursor`.
+
+        `cursor` is `None` for the first page. `context` and `host_loop`
+        only matter to a widget that calls out to a host-supplied callable
+        to build it. Only called on a `paginated` widget.
+        """
         raise NotImplementedError
 
     def update(self, event: Event) -> dict[str, Any] | None:

@@ -113,8 +113,12 @@ class EventStore:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._select, source)
 
-    async def compact(self) -> None:
+    async def compact(self, skip_rollup: frozenset[str] = frozenset()) -> None:
         """Fold raw events older than `retention` into rollup buckets.
+
+        A source named in `skip_rollup` just has its old raw events dropped
+        instead: rollup averaging is only correct for a plain numeric
+        series, and would otherwise corrupt anything keyed or categorical.
 
         A no-op unless `compact_interval` has elapsed since the last call,
         so it's safe to call on every pump tick.
@@ -133,7 +137,7 @@ class EventStore:
         self._last_compact = now
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(self._executor, self._compact)
+        await loop.run_in_executor(self._executor, self._compact, skip_rollup)
 
     def _insert(self, events: Sequence[Event]) -> None:
         rows = [
@@ -175,7 +179,7 @@ class EventStore:
 
         return events[-self.limit :]
 
-    def _compact(self) -> None:
+    def _compact(self, skip_rollup: frozenset[str] = frozenset()) -> None:
         boundary = time.time() - self.retention
         cutoff = boundary - (boundary % self.bucket)
 
@@ -189,6 +193,9 @@ class EventStore:
         buckets: dict[tuple[str, float], list[dict[str, Any]]] = {}
 
         for source, payload, at in rows:
+            if source in skip_rollup:
+                continue
+
             bucket_start = at - (at % self.bucket)
             buckets.setdefault((source, bucket_start), []).append(json.loads(payload))
 
