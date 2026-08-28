@@ -19,7 +19,7 @@ from dachshund.runtime.http import (
     heading,
 )
 
-FIXTURE_SCRIPT = Path(__file__).parent / "fixtures" / "gauge.js"
+FIXTURE_SCRIPT = Path(__file__).parent.parent / "fixtures" / "gauge.js"
 
 
 @pytest.mark.asyncio
