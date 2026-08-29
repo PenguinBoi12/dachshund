@@ -27,6 +27,7 @@ from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.widgets.number.number import Number
 from dachshund.widgets.table.table import Table
+from dachshund.widgets.text.text import Text
 
 __all__ = [
     "Action",
@@ -39,6 +40,7 @@ __all__ = [
     "Number",
     "Runtime",
     "Table",
+    "Text",
     "TimeSeriesChart",
     "Widget",
     "action",

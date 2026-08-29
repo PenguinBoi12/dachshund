@@ -84,6 +84,7 @@ nav:
       - Number: reference/number.md
       - Button: reference/button.md
       - Table: reference/table.md
+      - Text: reference/text.md
       - Events: reference/events.md
       - Runtime: reference/runtime.md
       - Storage: reference/storage.md
