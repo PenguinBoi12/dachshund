@@ -127,18 +127,34 @@ async def hydrate(dashboard: Dashboard, hydrated: set[str] | None = None) -> Non
 async def broadcast(app: web.Application, messages: list[dict[str, Any]]) -> None:
     """Push a batch of updates to every open page.
 
-    Pages that have gone away are dropped rather than retried.
+    Each page only gets the updates for widgets it shows, a page with
+    nothing left to apply isn't sent anything. Pages that have gone away
+    are dropped rather than retried.
     """
     if not messages:
         return
 
+    dashboard = app[DASHBOARD]
     clients = app[CLIENTS]
+    pages = {
+        name: dashboard.widget_page(name)
+        for name in {message["widget"] for message in messages}
+    }
 
-    for client in list(clients):
+    for client, page in list(clients.items()):
+        relevant = [
+            message
+            for message in messages
+            if page is None or pages[message["widget"]] == page
+        ]
+
+        if not relevant:
+            continue
+
         try:
-            await client.send_json(messages)
+            await client.send_json(relevant)
         except (ConnectionResetError, RuntimeError):
-            clients.discard(client)
+            clients.pop(client, None)
 
 
 async def pump(app: web.Application, hydrated: set[str] | None = None) -> None:
@@ -206,17 +222,21 @@ async def pumping(app: web.Application) -> AsyncIterator[None]:
 
 
 async def websocket(request: web.Request) -> web.WebSocketResponse:
-    """Hold a page's connection open for as long as it is looking."""
+    """Hold a page's connection open for as long as it is looking.
+
+    `?page=` names the dashboard page it shows, so it is only sent that
+    page's updates. Without it, it is sent every update.
+    """
     client = web.WebSocketResponse(heartbeat=HEARTBEAT)
     await client.prepare(request)
 
-    request.app[CLIENTS].add(client)
+    request.app[CLIENTS][client] = request.query.get("page")
 
     try:
         async for _ in client:
             # Pages only listen, anything they send is ignored.
             pass
     finally:
-        request.app[CLIENTS].discard(client)
+        request.app[CLIENTS].pop(client, None)
 
     return client

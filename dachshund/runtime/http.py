@@ -181,6 +181,7 @@ async def render_page(request: web.Request, page: str) -> web.Response:
         name=dashboard.name or FALLBACK_NAME,
         description=dashboard.description,
         started_at=dashboard.started_at,
+        page=page,
         rows=await cards(dashboard, page),
         pages=[
             {
@@ -264,7 +265,7 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app = web.Application()
     app[TEMPLATES] = create_environment()
     app[DASHBOARD] = dashboard
-    app[CLIENTS] = set()
+    app[CLIENTS] = {}
 
     app.router.add_get("/", index, name="index")
     app.router.add_get(WS_PATH, websocket, name="websocket")

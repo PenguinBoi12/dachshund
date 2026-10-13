@@ -689,3 +689,15 @@ async def test_named_page_declared_without_widgets__expect_the_empty_state() -> 
 
     assert response.status == 200
     assert "Nothing here yet" in body
+
+
+@pytest.mark.asyncio
+async def test_index__expect_the_page_shown_named_on_the_body() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.row("latency", page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert '<body data-page="requests">' in body

@@ -3,6 +3,7 @@ from jinja2 import Environment
 
 from dachshund.registry import Dashboard
 
-CLIENTS: web.AppKey[set[web.WebSocketResponse]] = web.AppKey("clients")
+# Each open page, mapped to the dashboard page it shows, None to be sent everything.
+CLIENTS: web.AppKey[dict[web.WebSocketResponse, str | None]] = web.AppKey("clients")
 DASHBOARD = web.AppKey("dashboard", Dashboard)
 TEMPLATES = web.AppKey("templates", Environment)

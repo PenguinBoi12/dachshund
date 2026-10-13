@@ -149,7 +149,7 @@ async def test_connect__expect_the_page_tracked_then_forgotten() -> None:
 
         await client.get("/")  # Let the handler finish tidying up.
 
-    assert app[CLIENTS] == set()
+    assert app[CLIENTS] == {}
 
 
 @pytest.mark.asyncio
@@ -178,17 +178,17 @@ class Gone:
 async def test_broadcast_to_a_page_that_went_away__expect_it_dropped() -> None:
     app = create_app(Dashboard(path=":memory:"))
     gone = Gone()
-    app[CLIENTS].add(gone)  # type: ignore[arg-type]
+    app[CLIENTS][gone] = None  # type: ignore[index]
 
     await broadcast(app, [{"widget": "latency", "op": "append", "data": {}}])
 
-    assert app[CLIENTS] == set()
+    assert app[CLIENTS] == {}
 
 
 @pytest.mark.asyncio
 async def test_broadcast_of_nothing__expect_no_send() -> None:
     app = create_app(Dashboard(path=":memory:"))
-    app[CLIENTS].add(Gone())  # type: ignore[arg-type]
+    app[CLIENTS][Gone()] = None  # type: ignore[index]
 
     await broadcast(app, [])
 
@@ -540,3 +540,75 @@ async def test_updates_when_storage_raises_for_one_widget__expect_the_others_una
     assert "broken" not in storage.saved
     assert {message["widget"] for message in messages} == {"broken", "commands"}
     assert "'broken'" in caplog.text
+
+
+class Recording:
+    """A page that keeps every batch it is sent."""
+
+    def __init__(self) -> None:
+        self.sent: list[object] = []
+
+    async def send_json(self, message: object) -> None:
+        self.sent.append(message)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_to_pages__expect_each_told_only_its_widgets() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+    dashboard.row("errors", page="requests")
+    app = create_app(dashboard)
+
+    overview, requests, everything = Recording(), Recording(), Recording()
+    app[CLIENTS][overview] = "default"  # type: ignore[index]
+    app[CLIENTS][requests] = "requests"  # type: ignore[index]
+    app[CLIENTS][everything] = None  # type: ignore[index]
+
+    latency = {"widget": "latency", "op": "append", "data": {}}
+    errors = {"widget": "errors", "op": "append", "data": {}}
+    await broadcast(app, [latency, errors])
+
+    assert overview.sent == [[latency]]
+    assert requests.sent == [[errors]]
+    assert everything.sent == [[latency, errors]]
+
+
+@pytest.mark.asyncio
+async def test_broadcast_with_nothing_for_a_page__expect_no_send() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.page("requests")
+    app = create_app(dashboard)
+
+    requests = Recording()
+    app[CLIENTS][requests] = "requests"  # type: ignore[index]
+
+    await broadcast(app, [{"widget": "latency", "op": "append", "data": {}}])
+
+    assert requests.sent == []
+
+
+@pytest.mark.asyncio
+async def test_connect_with_a_page__expect_it_remembered() -> None:
+    app = create_app(Dashboard(path=":memory:"))
+
+    async with TestClient(TestServer(app)) as client:
+        async with client.ws_connect(f"{WS_PATH}?page=requests"):
+            assert list(app[CLIENTS].values()) == ["requests"]
+
+
+@pytest.mark.asyncio
+async def test_emit_while_on_another_page__expect_nothing_pushed() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+    dashboard.row("errors", page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        async with client.ws_connect(f"{WS_PATH}?page=requests") as page:
+            dashboard.emit("latency", value=96)
+            dashboard.emit("errors", value=1)
+            messages = await page.receive_json(timeout=RECEIVE_TIMEOUT)
+
+    assert [message["widget"] for message in messages] == ["errors"]

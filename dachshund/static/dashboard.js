@@ -36,7 +36,8 @@
 
   const listen = (widgets) => {
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${scheme}://${location.host}/_ws`);
+    const page = encodeURIComponent(document.body.dataset.page);
+    const socket = new WebSocket(`${scheme}://${location.host}/_ws?page=${page}`);
 
     socket.addEventListener("message", (event) => {
       for (const message of JSON.parse(event.data)) {
