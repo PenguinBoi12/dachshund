@@ -80,8 +80,8 @@ This needs a `Storage` configured on the dashboard, the same as any persisting w
 ```python
 from dachshund.storage.sqlite import SQLiteStorage
 
-dashboard = dachshund.Dashboard(storage=SQLiteStorage("widget_state.db"))
-dashboard.widget("cpu", type="gauge", persist=True)
+dachshund.init(storage=SQLiteStorage("widget_state.db"))
+dachshund.widget("cpu", type="gauge", persist=True)
 ```
 
 `accumulate`/`snapshot`/`restore` are plain `Widget` hooks; any widget, built-in or your own, can implement them the same way, as Gauge just did. That's the right choice when the state is a single value, like Gauge's `last`.

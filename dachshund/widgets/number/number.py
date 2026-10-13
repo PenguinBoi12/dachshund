@@ -27,9 +27,9 @@ class Number(Widget):
     ```python
     from dachshund.storage.sqlite import SQLiteStorage
 
-    dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-    cpu = dashboard.widget("cpu", type="number", unit="%", persist=True)
-    dashboard.emit("cpu", value=42)
+    dachshund.init(storage=SQLiteStorage("widget_state.db"))
+    dachshund.widget("cpu", type="number", unit="%", persist=True)
+    dachshund.emit("cpu", value=42)
     ```
     """
 

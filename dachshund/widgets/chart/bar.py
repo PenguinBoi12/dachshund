@@ -40,10 +40,10 @@ class BarChart(KeyedWidget):
     ```python
     from dachshund.storage.sqlite import SQLiteStorage
 
-    dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-    commands = dashboard.chart("commands", type="bar", x="name", persist=True)
-    dashboard.emit("commands", name="/ban", value=1)
-    dashboard.emit("commands", name="/ban", _delete=True)
+    dachshund.init(storage=SQLiteStorage("widget_state.db"))
+    commands = dachshund.chart("commands", type="bar", x="name", persist=True)
+    dachshund.emit("commands", name="/ban", value=1)
+    dachshund.emit("commands", name="/ban", _delete=True)
 
     # after a full resync (e.g. re-emitting every current category):
     commands.sweep(before=time.time())

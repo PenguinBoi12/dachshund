@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from collections.abc import Iterator
 from typing import Any, Callable
 from urllib.request import urlopen
@@ -9,6 +10,7 @@ import pytest
 import dachshund
 from dachshund import registry
 from dachshund.registry import Dashboard
+from dachshund.runtime.ws import PUMP_INTERVAL
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
@@ -106,6 +108,19 @@ class FakeStorage:
 
     async def load(self, key: str) -> dict[str, object] | None:
         return None
+
+
+class SeededStorage:
+    """An in-memory `Storage`, pre-loadable with a value before `start()`."""
+
+    def __init__(self) -> None:
+        self.saved: dict[str, dict[str, object]] = {}
+
+    async def save(self, key: str, value: dict[str, object]) -> None:
+        self.saved[key] = value
+
+    async def load(self, key: str) -> dict[str, object] | None:
+        return self.saved.get(key)
 
 
 def test_init_with_a_different_storage__expect_a_warning(
@@ -336,30 +351,19 @@ def test_persisting_chart_without_storage__expect_value_error() -> None:
         Dashboard(path=":memory:").chart("commands", type="bar", x="name", persist=True)
 
 
-def test_persisting_chart_registered_after_start__expect_a_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    dashboard = Dashboard(path=":memory:", storage=FakeStorage(), port=0)
+def test_persisting_chart_registered_after_start__expect_it_hydrated_anyway() -> None:
+    storage = SeededStorage()
+    storage.saved["commands"] = {"entries": {"/ban": 3}, "seen_at": {}}
+    dashboard = Dashboard(path=":memory:", storage=storage, port=0)  # type: ignore[arg-type]
     dashboard.start()
 
     try:
-        with caplog.at_level(logging.WARNING, logger="dachshund"):
-            dashboard.chart("commands", type="bar", x="name", persist=True)
+        commands = dashboard.chart("commands", type="bar", x="name", persist=True)
+        time.sleep(PUMP_INTERVAL * 2)
 
-        assert "was registered after the dashboard started" in caplog.text
+        assert commands.state.entries == {"/ban": 3}  # type: ignore[attr-defined]
     finally:
         dashboard.stop()
-
-
-def test_persisting_chart_registered_before_start__expect_no_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    dashboard = Dashboard(path=":memory:", storage=FakeStorage())
-
-    with caplog.at_level(logging.WARNING, logger="dachshund"):
-        dashboard.chart("commands", type="bar", x="name", persist=True)
-
-    assert "was registered after the dashboard started" not in caplog.text
 
 
 def test_chart__expect_a_line_by_default() -> None:

@@ -27,9 +27,9 @@ class Text(Widget):
     ```python
     from dachshund.storage.sqlite import SQLiteStorage
 
-    daschund.init(storage=SQLiteStorage("widget_state.db"))
-    daschund.widget("changelog", type="text", persist=True)
-    daschund.emit("changelog", value="**v1.2** fixed the thing.")
+    dachshund.init(storage=SQLiteStorage("widget_state.db"))
+    dachshund.widget("changelog", type="text", persist=True)
+    dachshund.emit("changelog", value="**v1.2** fixed the thing.")
     ```
     """
 

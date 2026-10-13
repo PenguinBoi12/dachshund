@@ -136,22 +136,12 @@ class Dashboard:
         if widget.name in self.widgets:
             raise ValueError(f"A widget named {widget.name!r} already exists.")
 
-        if getattr(widget, "persist", False):
-            if self.storage is None:
-                raise ValueError(
-                    f"{widget.name!r} wants to persist, but no storage is "
-                    "configured. Pass storage=... to Dashboard() or "
-                    "dachshund.init()."
-                )
-
-            if self.is_running:
-                logger.warning(
-                    "%r was registered after the dashboard started, so its "
-                    "persisted state was never restored. Register persisting "
-                    "widgets before calling start()/dachshund.init(), not "
-                    "after, or their history is silently lost on every restart.",
-                    widget.name,
-                )
+        if getattr(widget, "persist", False) and self.storage is None:
+            raise ValueError(
+                f"{widget.name!r} wants to persist, but no storage is "
+                "configured. Pass storage=... to Dashboard() or "
+                "dachshund.init()."
+            )
 
         self.widgets[widget.name] = widget
 

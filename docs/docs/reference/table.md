@@ -42,17 +42,17 @@ With `persist=True`, rows survive a restart. Needs `key` set and `storage=...` c
 ```python
 from dachshund.storage.sqlite import SQLiteStorage
 
-dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-members = dashboard.widget(
+dachshund.init(storage=SQLiteStorage("widget_state.db"))
+members = dachshund.widget(
     "sessions", type="table", columns=["user", "ip"], key="user", persist=True
 )
-dashboard.emit("sessions", user="ada", ip="10.0.0.1")
+dachshund.emit("sessions", user="ada", ip="10.0.0.1")
 ```
 
 A truthy `_delete` field removes a row instead of updating it:
 
 ```python
-dashboard.emit("sessions", user="ada", _delete=True)
+dachshund.emit("sessions", user="ada", _delete=True)
 ```
 
 `sweep(before)` drops any row not touched since a given time, for resyncing after downtime, re-emit every currently-known row, then sweep:

@@ -292,6 +292,66 @@ async def test_hydrate__expect_a_persisting_widget_seeded_from_storage() -> None
 
 
 @pytest.mark.asyncio
+async def test_hydrate_called_again_with_the_same_set__expect_it_left_alone() -> None:
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
+
+    hydrated: set[str] = set()
+    await hydrate(dashboard, hydrated)
+
+    # Storage changes after the fact (e.g. a fresh snapshot from a live
+    # update); an already-hydrated widget must not be reloaded over it.
+    await storage.save("commands", {"entries": {"/mute": 9}, "seen_at": {}})
+    await hydrate(dashboard, hydrated)
+
+    assert dashboard.widgets["commands"].state.entries == {"/ban": 3}  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_hydrate_of_a_widget_registered_since_the_last_call__expect_it_seeded() -> (
+    None
+):
+    storage = FakeStorage()
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+    await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
+
+    hydrated: set[str] = set()
+    await hydrate(dashboard, hydrated)
+
+    dashboard.chart("errors", type="bar", x="kind", persist=True)
+    await storage.save("errors", {"entries": {"timeout": 2}, "seen_at": {}})
+    await hydrate(dashboard, hydrated)
+
+    assert dashboard.widgets["errors"].state.entries == {"timeout": 2}  # type: ignore[attr-defined]
+    assert dashboard.widgets["commands"].state.entries == {"/ban": 3}  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_hydrate_when_storage_raises__expect_it_retried_on_the_next_call(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage = PartiallyFlakyStorage(fails_on="commands")
+    dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
+    dashboard.chart("commands", type="bar", x="name", persist=True)
+
+    hydrated: set[str] = set()
+
+    with caplog.at_level(logging.ERROR, logger="dachshund"):
+        await hydrate(dashboard, hydrated)
+
+    assert "commands" not in hydrated
+
+    storage.fails_on = ""
+    await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
+    await hydrate(dashboard, hydrated)
+
+    assert dashboard.widgets["commands"].state.entries == {"/ban": 3}  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]

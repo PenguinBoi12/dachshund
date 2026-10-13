@@ -39,12 +39,12 @@ class Table(KeyedWidget):
     ```python
     from dachshund.storage.sqlite import SQLiteStorage
 
-    dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-    dashboard.widget(
+    dachshund.init(storage=SQLiteStorage("widget_state.db"))
+    dachshund.widget(
         "sessions", type="table", columns=["user", "ip"], key="user", persist=True
     )
-    dashboard.emit("sessions", user="ada", ip="10.0.0.1")
-    dashboard.emit("sessions", user="ada", _delete=True)
+    dachshund.emit("sessions", user="ada", ip="10.0.0.1")
+    dachshund.emit("sessions", user="ada", _delete=True)
     ```
 
     For a table backed by data dachshund doesn't own, `loader` fetches a

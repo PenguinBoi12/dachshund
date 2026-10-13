@@ -87,8 +87,14 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
     return messages
 
 
-async def hydrate(dashboard: Dashboard) -> None:
-    """Seed every persisting widget from whatever storage last saved for it.
+async def hydrate(dashboard: Dashboard, hydrated: set[str] | None = None) -> None:
+    """Seed every not-yet-hydrated persisting widget from storage.
+
+    `hydrated` names widgets already seeded and grows with each one newly
+    seeded here, so calling this again for whatever's been registered since
+    never re-restores (and so never clobbers with a stale snapshot) a widget
+    already accumulating live updates. Left unset, this is a one-shot pass
+    over everything currently registered.
 
     ## Example
 
@@ -99,8 +105,11 @@ async def hydrate(dashboard: Dashboard) -> None:
     if dashboard.storage is None:
         return
 
+    if hydrated is None:
+        hydrated = set()
+
     for widget in dashboard.widgets.values():
-        if not getattr(widget, "persist", False):
+        if widget.name in hydrated or not getattr(widget, "persist", False):
             continue
 
         try:
@@ -108,6 +117,8 @@ async def hydrate(dashboard: Dashboard) -> None:
         except Exception:
             logger.exception("Could not load %r's persisted state.", widget.name)
             continue
+
+        hydrated.add(widget.name)
 
         if data is not None:
             widget.restore(data)
@@ -130,11 +141,13 @@ async def broadcast(app: web.Application, messages: list[dict[str, Any]]) -> Non
             clients.discard(client)
 
 
-async def pump(app: web.Application) -> None:
+async def pump(app: web.Application, hydrated: set[str] | None = None) -> None:
     """Move emitted events into the store and out to the open pages.
 
     This is the only place the store is written, so it needs no locking. It
-    always runs on the runtime's event loop.
+    always runs on the runtime's event loop. Each tick also hydrates
+    whatever persisting widget hasn't been seeded yet, e.g. one registered
+    after the dashboard was already serving.
 
     ## Example
 
@@ -148,6 +161,8 @@ async def pump(app: web.Application) -> None:
         await asyncio.sleep(PUMP_INTERVAL)
 
         try:
+            await hydrate(dashboard, hydrated)
+
             events = dashboard.drain()
             await dashboard.events.append(events)
 
@@ -167,11 +182,15 @@ async def pumping(app: web.Application) -> AsyncIterator[None]:
     """Run the pump for as long as the application is served.
 
     Persisting widgets are hydrated first, before the site accepts any
-    connections, so the very first page load already reflects them.
+    connections, so the very first page load already reflects them. One
+    registered later, after the dashboard already started, is hydrated the
+    same way on the next pump tick instead.
     """
-    await hydrate(app[DASHBOARD])
+    hydrated: set[str] = set()
 
-    task = asyncio.create_task(pump(app))
+    await hydrate(app[DASHBOARD], hydrated)
+
+    task = asyncio.create_task(pump(app, hydrated))
 
     yield
 
