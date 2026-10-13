@@ -1,25 +1,31 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% for widget in widgets %}
-<section class="card span-{{ widget.size }}"
-         data-widget="{{ widget.name }}"
-         data-type="{{ widget.type }}"
-         data-payload="{{ widget.payload }}">
-  <h2 class="card-title">{{ widget.title }}</h2>
-  <div class="card-content"></div>
-  {% if widget.actions %}
-  <div class="card-actions">
-    {% for action in widget.actions %}
-    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
-    {% endfor %}
-  </div>
-  {% endif %}
-</section>
+{% for row in rows %}
+<div class="grid">
+  {% for widget in row %}
+  <section class="card span-{{ widget.size }}"
+           data-widget="{{ widget.name }}"
+           data-type="{{ widget.type }}"
+           data-payload="{{ widget.payload }}">
+    <h2 class="card-title">{{ widget.title }}</h2>
+    <div class="card-content"></div>
+    {% if widget.actions %}
+    <div class="card-actions">
+      {% for action in widget.actions %}
+      <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
 {% else %}
-<section class="card empty span-3">
-  <h2 class="card-title">Nothing here yet</h2>
-  <p class="card-body">Register a widget to start building this dashboard.</p>
-</section>
+<div class="grid">
+  <section class="card empty span-3">
+    <h2 class="card-title">Nothing here yet</h2>
+    <p class="card-body">Register a widget to start building this dashboard.</p>
+  </section>
+</div>
 {% endfor %}
 {% endblock %}

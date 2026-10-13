@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 import dachshund
 from dachshund.actions import action_card, bind_args, invoke, resolve_row_actions
 from dachshund.filters import FILTERS
+from dachshund.layout import DEFAULT_PAGE
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
 from dachshund.widgets.base import WIDGETS, Widget
@@ -20,6 +21,7 @@ STATIC_PREFIX = "/_static"
 WIDGET_ASSET_PREFIX = f"{STATIC_PREFIX}/widgets"
 
 FALLBACK_NAME = "Dashboard"
+DEFAULT_PAGE_TITLE = "Overview"
 
 
 def create_environment() -> Environment:
@@ -38,8 +40,8 @@ def heading(widget: Widget) -> str:
     return widget.title or widget.name.replace("_", " ")
 
 
-async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
-    """Build every widget card, filled with the events kept so far.
+async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
+    """Build one widget's card, filled with the events kept so far.
 
     A widget that renders its own actions (a table, one button per row)
     gets no card-level action row, `page.html`'s `.card-actions` block is
@@ -47,34 +49,61 @@ async def cards(dashboard: Dashboard) -> list[dict[str, Any]]:
     resolved `{name, label, confirm}` actions instead, so the renderer never
     has to look up `dashboard.actions` on its own.
     """
-    cards = []
+    kept = await dashboard.events.events(widget.source)
+    payload = (
+        await widget.page(kept, None, dashboard.context, dashboard.host_loop)
+        if widget.paginated
+        else widget.render(kept)
+    )
+    resolve_row_actions(dashboard.actions, widget, payload)
 
-    for widget in dashboard.widgets.values():
-        kept = await dashboard.events.events(widget.source)
-        payload = (
-            await widget.page(kept, None, dashboard.context, dashboard.host_loop)
-            if widget.paginated
-            else widget.render(kept)
-        )
-        resolve_row_actions(dashboard.actions, widget, payload)
+    return {
+        "name": widget.name,
+        "type": widget.type,
+        "title": heading(widget),
+        "size": widget.size,
+        "payload": json.dumps(payload),
+        "actions": []
+        if widget.renders_own_actions
+        else [
+            action_card(dashboard.actions, name, widget.action_args.get(name))
+            for name in widget.actions
+        ],
+    }
 
-        cards.append(
-            {
-                "name": widget.name,
-                "type": widget.type,
-                "title": heading(widget),
-                "size": widget.size,
-                "payload": json.dumps(payload),
-                "actions": []
-                if widget.renders_own_actions
-                else [
-                    action_card(dashboard.actions, name, widget.action_args.get(name))
-                    for name in widget.actions
-                ],
-            }
-        )
 
-    return cards
+async def cards(
+    dashboard: Dashboard, page: str = DEFAULT_PAGE
+) -> list[list[dict[str, Any]]]:
+    """Build the cards of `page`, one list per row, in display order."""
+    return [
+        [await card(dashboard, dashboard.widgets[name]) for name in row]
+        for row in dashboard.layout(page)
+    ]
+
+
+def page_names(dashboard: Dashboard) -> list[str]:
+    """The pages worth showing, in navigation order.
+
+    `"default"` comes first, unless other pages are declared and it has
+    no widgets left on it.
+    """
+    declared = [name for name in dashboard.pages if name != DEFAULT_PAGE]
+
+    if not declared or dashboard.layout(DEFAULT_PAGE):
+        return [DEFAULT_PAGE, *declared]
+
+    return declared
+
+
+def page_title(dashboard: Dashboard, name: str) -> str:
+    """What a page is called in the navigation."""
+    declared = dashboard.pages.get(name)
+
+    if declared is not None and declared.title:
+        return declared.title
+
+    return DEFAULT_PAGE_TITLE if name == DEFAULT_PAGE else name.replace("_", " ")
 
 
 def _asset_urls(dashboard: Dashboard, attr: str, suffix: str) -> list[str]:
@@ -142,16 +171,25 @@ async def widget_page(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
-async def index(request: web.Request) -> web.Response:
-    """Render the dashboard page."""
+async def render_page(request: web.Request, page: str) -> web.Response:
+    """Render one page of the dashboard."""
     dashboard = request.app[DASHBOARD]
     template = request.app[TEMPLATES].get_template("page.html")
+    names = page_names(dashboard)
 
     html = template.render(
         name=dashboard.name or FALLBACK_NAME,
         description=dashboard.description,
         started_at=dashboard.started_at,
-        widgets=await cards(dashboard),
+        rows=await cards(dashboard, page),
+        pages=[
+            {
+                "url": "/" if name == names[0] else f"/{name}",
+                "title": page_title(dashboard, name),
+                "current": name == page,
+            }
+            for name in names
+        ],
         widget_scripts=widget_scripts(dashboard),
         widget_styles=widget_styles(dashboard),
         version=dachshund.__version__,
@@ -159,6 +197,25 @@ async def index(request: web.Request) -> web.Response:
     )
 
     return web.Response(text=html, content_type="text/html")
+
+
+async def index(request: web.Request) -> web.Response:
+    """Render the first page of the dashboard."""
+    return await render_page(request, page_names(request.app[DASHBOARD])[0])
+
+
+async def named_page(request: web.Request) -> web.Response:
+    """Render the page named in the URL, the first one redirecting to `/`."""
+    page = request.match_info["page"]
+    names = page_names(request.app[DASHBOARD])
+
+    if page not in names:
+        raise web.HTTPNotFound()
+
+    if page == names[0]:
+        raise web.HTTPFound("/")
+
+    return await render_page(request, page)
 
 
 async def run_action(request: web.Request) -> web.Response:
@@ -220,6 +277,8 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app.router.add_post("/_actions/{name}", run_action, name="action")
     app.router.add_get("/_widgets/{name}/page", widget_page, name="widget-page")
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
+    # Last, so a page name never shadows one of the routes above.
+    app.router.add_get("/{page}", named_page, name="page")
 
     app.cleanup_ctx.append(pumping)
 
