@@ -20,3 +20,5 @@ dachshund.emit("latency", value=96)
         - chart
         - widget
         - emit
+        - page
+        - row

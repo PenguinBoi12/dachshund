@@ -391,3 +391,95 @@ def test_chart_typed_as_a_bar__expect_x_naming_its_category() -> None:
 
     assert isinstance(chart, BarChart)
     assert chart.x == "name"
+
+
+def test_page__expect_it_created_with_a_title() -> None:
+    dashboard = Dashboard(path=":memory:")
+    page = dashboard.page("errors", title="Errors")
+
+    assert dashboard.pages == {"errors": page}
+    assert (page.name, page.title) == ("errors", "Errors")
+
+
+def test_page_called_again__expect_the_same_page_retitled() -> None:
+    dashboard = Dashboard(path=":memory:")
+    first = dashboard.page("errors")
+    second = dashboard.page("errors", title="Errors")
+
+    assert first is second
+    assert second.title == "Errors"
+
+
+def test_row_of_an_unknown_widget__expect_value_error() -> None:
+    with pytest.raises(ValueError, match="don't exist: ghost"):
+        Dashboard(path=":memory:").row("ghost")
+
+
+def test_row__expect_it_recorded_on_the_named_page() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+
+    dashboard.row("latency", "errors", page="requests")
+
+    assert dashboard.pages["requests"].rows == [["latency", "errors"]]
+
+
+def test_layout_with_nothing_declared__expect_one_row_with_every_widget() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+
+    assert dashboard.layout() == [["latency", "errors"]]
+
+
+def test_layout_with_some_widgets_placed__expect_leftovers_trailing() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+    dashboard.chart("cpu", type="timeseries")
+
+    dashboard.row("errors")
+
+    assert dashboard.layout() == [["errors"], ["latency", "cpu"]]
+
+
+def test_layout_of_a_page_other_than_default__expect_only_its_own_rows() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.chart("errors", type="timeseries")
+
+    dashboard.row("errors", page="requests")
+
+    assert dashboard.layout("requests") == [["errors"]]
+
+
+def test_layout_of_an_undeclared_page__expect_an_empty_layout() -> None:
+    assert Dashboard(path=":memory:").layout("requests") == []
+
+
+def test_widget_page_never_placed__expect_default() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+
+    assert dashboard.widget_page("latency") == "default"
+
+
+def test_widget_page_placed_by_row__expect_its_page() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.chart("latency", type="timeseries")
+    dashboard.row("latency", page="requests")
+
+    assert dashboard.widget_page("latency") == "requests"
+
+
+def test_module_level_page_and_row__expect_the_default_dashboard() -> None:
+    dachshund.default(path=":memory:")
+    dachshund.chart("latency", type="timeseries")
+
+    dachshund.page("requests", title="Requests")
+    dachshund.row("latency", page="requests")
+
+    dashboard = dachshund.default()
+    assert dashboard.pages["requests"].title == "Requests"
+    assert dashboard.layout("requests") == [["latency"]]

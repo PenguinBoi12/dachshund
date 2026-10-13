@@ -8,12 +8,15 @@ except PackageNotFoundError:
     from dachshund._version import version as __version__
 
 from dachshund.actions import Action, Context
+from dachshund.layout import Page
 from dachshund.registry import (
     Dashboard,
     default,
     emit,
     chart,
     init,
+    page,
+    row,
     shutdown,
     widget,
     action,
@@ -38,6 +41,7 @@ __all__ = [
     "Event",
     "LineChart",
     "Number",
+    "Page",
     "Runtime",
     "Table",
     "Text",
@@ -48,6 +52,8 @@ __all__ = [
     "default",
     "emit",
     "init",
+    "page",
+    "row",
     "shutdown",
     "widget",
 ]

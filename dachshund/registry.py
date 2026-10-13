@@ -11,6 +11,7 @@ from typing import Any, Callable, Sequence
 from aiohttp import web
 
 from dachshund.actions import Action, Context
+from dachshund.layout import DEFAULT_PAGE, Page
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
@@ -68,6 +69,7 @@ class Dashboard:
 
         self.widgets: dict[str, Widget] = {}
         self.actions: dict[str, Action] = {}
+        self.pages: dict[str, Page] = {}
         self.dropped = 0
         self._dropping = False
 
@@ -310,6 +312,89 @@ class Dashboard:
         """The widgets watching `source`."""
         return [widget for widget in self.widgets.values() if widget.source == source]
 
+    def page(self, name: str, *, title: str | None = None) -> Page:
+        """Declare a page, or retitle one already declared.
+
+        Never required: a dashboard that never calls this or `row()` puts
+        every widget on one implicit `"default"` page, as one row, in
+        registration order.
+
+        ## Example
+
+        ```python
+        dashboard.page("errors", title="Errors")
+        ```
+        """
+        existing = self.pages.get(name)
+
+        if existing is None:
+            existing = self.pages[name] = Page(name, title=title)
+        elif title is not None:
+            existing.title = title
+
+        return existing
+
+    def row(self, *names: str, page: str = DEFAULT_PAGE) -> None:
+        """Group already-registered widgets into one row of `page`.
+
+        Call after registering every widget named here, in the order
+        they should appear. A widget never named in any `row()` call
+        auto-appends, in registration order, as a trailing row of
+        `"default"`.
+
+        ## Example
+
+        ```python
+        dashboard.row("latency", "errors", page="requests")
+        ```
+        """
+        unknown = [name for name in names if name not in self.widgets]
+
+        if unknown:
+            raise ValueError(
+                f"row() names widgets that don't exist: {', '.join(unknown)}."
+            )
+
+        self.page(page).rows.append(list(names))
+
+    def widget_page(self, name: str) -> str:
+        """The page a widget appears on, `"default"` if never placed by `row()`."""
+        for page in self.pages.values():
+            if any(name in row for row in page.rows):
+                return page.name
+
+        return DEFAULT_PAGE
+
+    def layout(self, page: str = DEFAULT_PAGE) -> list[list[str]]:
+        """The rows of widget names making up `page`, in display order.
+
+        `page`'s own explicit rows come first. For `"default"`, every
+        widget not placed on any page by `row()` follows as one trailing
+        row, in registration order.
+
+        ## Example
+
+        ```python
+        dashboard.layout("requests")
+        # [["latency", "errors"]]
+        ```
+        """
+        rows = [list(row) for row in self.pages.get(page, Page(page)).rows]
+
+        if page == DEFAULT_PAGE:
+            placed = {
+                name
+                for other in self.pages.values()
+                for row in other.rows
+                for name in row
+            }
+            leftover = [name for name in self.widgets if name not in placed]
+
+            if leftover:
+                rows.append(leftover)
+
+        return rows
+
     def _create_app(self) -> web.Application:
         """Build the application that serves this dashboard."""
         from dachshund.runtime.http import create_app
@@ -503,3 +588,35 @@ def emit(source: str, /, **fields: Any) -> None:
     ```
     """
     default().emit(source, **fields)
+
+
+def page(name: str, **options: Any) -> Page:
+    """Declare a page, on the default dashboard.
+
+    Takes what [Dashboard.page][dachshund.registry.Dashboard.page] does.
+
+    ## Example
+
+    ```python
+    import dachshund
+
+    dachshund.page("errors", title="Errors")
+    ```
+    """
+    return default().page(name, **options)
+
+
+def row(*names: str, **options: Any) -> None:
+    """Group widgets into one row, on the default dashboard.
+
+    Takes what [Dashboard.row][dachshund.registry.Dashboard.row] does.
+
+    ## Example
+
+    ```python
+    import dachshund
+
+    dachshund.row("latency", "errors", page="requests")
+    ```
+    """
+    default().row(*names, **options)
