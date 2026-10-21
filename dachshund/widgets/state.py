@@ -2,7 +2,7 @@ import time
 from dataclasses import KW_ONLY, dataclass, field
 from typing import Any
 
-from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import PersistableWidget
 
 
 @dataclass
@@ -57,25 +57,23 @@ class KeyedState:
 
 
 @dataclass
-class KeyedWidget(Widget):
-    """A `Widget` whose persisted state is a `KeyedState`.
+class KeyedWidget(PersistableWidget):
+    """A `PersistableWidget` whose persisted state is a `KeyedState`.
 
-    Provides `persist`, `state`, `snapshot`, `restore`, and `sweep`. A
-    subclass adds its own `accumulate()` and reads `self.state.entries` in
-    `render()`, same as `Table`/`BarChart` do.
+    Provides `state`, `snapshot`, `restore`, and `sweep`. A subclass adds its
+    own `accumulate()` and reads `self.state.entries` in `render()`, same as
+    `Table`/`BarChart` do.
     """
 
     _: KW_ONLY
-
-    persist: bool = False
 
     state: KeyedState = field(
         default_factory=KeyedState, init=False, repr=False, compare=False
     )
 
-    def snapshot(self) -> dict[str, Any] | None:
-        """The kept entries, or `None` when this widget isn't persisting."""
-        return self.state.snapshot() if self.persist else None
+    def snapshot(self) -> dict[str, Any]:
+        """The kept entries."""
+        return self.state.snapshot()
 
     def restore(self, data: dict[str, Any]) -> None:
         """Pick up where the last persisted snapshot left off."""

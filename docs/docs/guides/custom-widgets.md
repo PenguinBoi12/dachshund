@@ -46,26 +46,31 @@ class Gauge(Widget):
 
 ## Persisting it
 
-Right now Gauge only knows what `events` it's handed, which is the recent, windowed history. Nothing stops it from keeping its own state that survives a restart, the same way [BarChart][dachshund.BarChart]'s `persist` does. Three more hooks, all optional:
+Right now Gauge only knows what `events` it's handed, which is the recent, windowed history. To let it keep its own state across a restart, the way [BarChart][dachshund.BarChart]'s `persist` does, subclass [PersistableWidget][dachshund.PersistableWidget] instead of `Widget` and implement its three hooks:
 
 ```python
-    persist: bool = False
+from dachshund import PersistableWidget
+
+
+@dataclass
+class Gauge(PersistableWidget):
+    ...
 
     last: float | None = field(default=None, init=False, repr=False, compare=False)
 
     def accumulate(self, event):
-        if not self.persist:
-            return
         value = self.value(event, self.y)
         if value is not None:
             self.last = value
 
     def snapshot(self):
-        return {"last": self.last} if self.persist else None
+        return {"last": self.last}
 
     def restore(self, data):
         self.last = data.get("last")
 ```
+
+All three are required; a subclass missing one can't be built. Persisting is off by default: `persist` defaults to `False`, and the hooks are only called on a Gauge built with `persist=True`.
 
 `render()` reads `self.last` instead of `events` when persisting:
 
@@ -83,8 +88,6 @@ from dachshund.storage.sqlite import SQLiteStorage
 dachshund.init(storage=SQLiteStorage("widget_state.db"))
 dachshund.widget("cpu", type="gauge", persist=True)
 ```
-
-`accumulate`/`snapshot`/`restore` are plain `Widget` hooks; any widget, built-in or your own, can implement them the same way, as Gauge just did. That's the right choice when the state is a single value, like Gauge's `last`.
 
 When it's naturally one entry per string key instead of a single value, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] rather than writing the three hooks yourself; `Table` and `BarChart` both do.
 

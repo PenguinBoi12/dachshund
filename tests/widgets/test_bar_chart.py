@@ -72,15 +72,6 @@ def test_bar_render_of_an_event_carrying_nothing__expect_it_left_out() -> None:
     }
 
 
-def test_bar_accumulate_without_persist__expect_nothing_kept() -> None:
-    chart = BarChart("commands", source="commands", x="name")
-
-    chart.accumulate(Event("commands", {"name": "/ban", "value": 1}))
-
-    assert chart.state.entries == {}
-    assert chart.snapshot() is None
-
-
 def test_bar_accumulate_with_persist__expect_the_totals_kept() -> None:
     chart = BarChart("commands", source="commands", x="name", persist=True)
 

@@ -59,15 +59,6 @@ def test_text_render_with_a_javascript_link__expect_the_link_dropped() -> None:
     assert "<a" not in html
 
 
-def test_text_accumulate_without_persist__expect_nothing_kept() -> None:
-    widget = Text("changelog", source="changelog")
-
-    widget.accumulate(Event("changelog", {"value": "hi"}))
-
-    assert widget.kept is None
-    assert widget.snapshot() is None
-
-
 def test_text_accumulate_with_persist__expect_the_text_kept() -> None:
     widget = Text("changelog", source="changelog", persist=True)
 

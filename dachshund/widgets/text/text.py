@@ -3,12 +3,12 @@ from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
-from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import PersistableWidget
 from dachshund.widgets.markup import render_markdown
 
 
 @dataclass
-class Text(Widget):
+class Text(PersistableWidget):
     """The latest markdown from its source, rendered to sanitized HTML.
 
     `y` names the field read and defaults to `value`.
@@ -36,7 +36,6 @@ class Text(Widget):
     _: KW_ONLY
 
     y: str = "value"
-    persist: bool = False
 
     kept: dict[str, Any] | None = field(
         default=None, init=False, repr=False, compare=False
@@ -61,10 +60,7 @@ class Text(Widget):
         return {"html": render_markdown(text) if text is not None else None}
 
     def accumulate(self, event: Event) -> None:
-        """Keep the latest markdown of `y`, if persisting."""
-        if not self.persist:
-            return
-
+        """Keep the latest markdown of `y`."""
         text = self._read(event)
 
         if text is None:
@@ -72,9 +68,9 @@ class Text(Widget):
 
         self.kept = {"value": text}
 
-    def snapshot(self) -> dict[str, Any] | None:
-        """The kept text, or `None` when this widget isn't persisting."""
-        return self.kept if self.persist else None
+    def snapshot(self) -> dict[str, Any]:
+        """The kept text."""
+        return self.kept or {}
 
     def restore(self, data: dict[str, Any]) -> None:
         """Pick up where the last persisted snapshot left off."""

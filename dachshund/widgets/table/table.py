@@ -234,11 +234,11 @@ class Table(KeyedWidget):
         }
 
     def accumulate(self, event: Event) -> None:
-        """Fold one more event into the kept rows, if persisting.
+        """Fold one more event into the kept rows.
 
         A truthy `_delete` removes the row instead of updating it.
         """
-        if not self.persist or self.key is None:
+        if self.key is None:
             return
 
         if self.key not in event.payload:

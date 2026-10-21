@@ -10,6 +10,7 @@ from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import PersistableWidget, persisting
 
 WS_PATH = "/_ws"
 PUMP_INTERVAL = 0.2
@@ -44,14 +45,13 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
     """
     messages = []
     rebuilt: dict[str, Widget] = {}
-    persisting: dict[str, Widget] = {}
+    persisted: dict[str, PersistableWidget] = {}
 
     for event in events:
         for widget in dashboard.watching(event.source):
-            widget.accumulate(event)
-
-            if getattr(widget, "persist", False):
-                persisting[widget.name] = widget
+            if persisting(widget):
+                widget.accumulate(event)
+                persisted[widget.name] = widget
 
             if widget.op != "append":
                 rebuilt[widget.name] = widget
@@ -63,14 +63,9 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
                 messages.append(message(widget, change))
 
     if dashboard.storage is not None:
-        for widget in persisting.values():
-            snapshot = widget.snapshot()
-
-            if snapshot is None:
-                continue
-
+        for widget in persisted.values():
             try:
-                await dashboard.storage.save(widget.name, snapshot)
+                await dashboard.storage.save(widget.name, widget.snapshot())
             except Exception:
                 logger.exception("Could not persist %r's state.", widget.name)
 
@@ -109,7 +104,7 @@ async def hydrate(dashboard: Dashboard, hydrated: set[str] | None = None) -> Non
         hydrated = set()
 
     for widget in dashboard.widgets.values():
-        if widget.name in hydrated or not getattr(widget, "persist", False):
+        if widget.name in hydrated or not persisting(widget):
             continue
 
         try:

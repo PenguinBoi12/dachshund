@@ -351,6 +351,11 @@ def test_persisting_chart_without_storage__expect_value_error() -> None:
         Dashboard(path=":memory:").chart("commands", type="bar", x="name", persist=True)
 
 
+def test_persisting_line_chart__expect_type_error() -> None:
+    with pytest.raises(TypeError, match="can't persist"):
+        Dashboard(path=":memory:").chart("latency", type="line", x="load", persist=True)
+
+
 def test_persisting_chart_registered_after_start__expect_it_hydrated_anyway() -> None:
     storage = SeededStorage()
     storage.saved["commands"] = {"entries": {"/ban": 3}, "seen_at": {}}

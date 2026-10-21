@@ -97,13 +97,10 @@ class BarChart(KeyedWidget):
         return str(event.payload.get(self.x, UNLABELLED))
 
     def accumulate(self, event: Event) -> None:
-        """Fold one more event into the kept totals, if persisting.
+        """Fold one more event into the kept totals.
 
         A truthy `_delete` removes the category instead of adding to it.
         """
-        if not self.persist:
-            return
-
         category = self.category(event)
 
         if event.payload.get("_delete"):

@@ -51,15 +51,6 @@ def test_number_render_with_a_unit__expect_it_carried_through() -> None:
     }
 
 
-def test_number_accumulate_without_persist__expect_nothing_kept() -> None:
-    widget = Number("highest_latency", source="highest_latency")
-
-    widget.accumulate(Event("highest_latency", {"value": 96}))
-
-    assert widget.kept is None
-    assert widget.snapshot() is None
-
-
 def test_number_accumulate_with_persist__expect_the_reading_kept() -> None:
     widget = Number("highest_latency", source="highest_latency", persist=True)
 

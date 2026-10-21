@@ -76,6 +76,7 @@ nav:
   - Reference:
       - Dashboard: reference/dashboard.md
       - Widget: reference/widget.md
+      - Persistable Widget: reference/persistable-widget.md
       - Keyed Widget: reference/keyed-widget.md
       - Actions: reference/actions.md
       - Time Series Chart: reference/timeseries-chart.md

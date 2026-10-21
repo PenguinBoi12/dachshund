@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
 from dachshund.storage.events import Event
-from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import PersistableWidget
 
 
 @dataclass
-class Number(Widget):
+class Number(PersistableWidget):
     """The latest number from its source, big.
 
     `y` names the field read and defaults to `value`. `unit` is shown next to
@@ -37,7 +37,6 @@ class Number(Widget):
 
     y: str = "value"
     unit: str | None = None
-    persist: bool = False
 
     kept: dict[str, Any] | None = field(
         default=None, init=False, repr=False, compare=False
@@ -62,10 +61,7 @@ class Number(Widget):
         return {"value": value, "unit": self.unit}
 
     def accumulate(self, event: Event) -> None:
-        """Keep the latest reading of `y`, if persisting."""
-        if not self.persist:
-            return
-
+        """Keep the latest reading of `y`."""
         value = self.value(event, self.y)
 
         if value is None:
@@ -73,9 +69,9 @@ class Number(Widget):
 
         self.kept = {"value": value}
 
-    def snapshot(self) -> dict[str, Any] | None:
-        """The kept reading, or `None` when this widget isn't persisting."""
-        return self.kept if self.persist else None
+    def snapshot(self) -> dict[str, Any]:
+        """The kept reading."""
+        return self.kept or {}
 
     def restore(self, data: dict[str, Any]) -> None:
         """Pick up where the last persisted snapshot left off."""

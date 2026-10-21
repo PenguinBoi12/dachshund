@@ -19,6 +19,7 @@ from dachshund.storage.events import DEFAULT_PATH, Event, EventStore
 from dachshund.storage.protocol import Storage
 from dachshund.widgets import build
 from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import persisting
 
 QUEUE_SIZE = 10_000
 
@@ -138,7 +139,7 @@ class Dashboard:
         if widget.name in self.widgets:
             raise ValueError(f"A widget named {widget.name!r} already exists.")
 
-        if getattr(widget, "persist", False) and self.storage is None:
+        if persisting(widget) and self.storage is None:
             raise ValueError(
                 f"{widget.name!r} wants to persist, but no storage is "
                 "configured. Pass storage=... to Dashboard() or "

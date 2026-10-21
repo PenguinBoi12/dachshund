@@ -20,8 +20,20 @@ def test_widget_with_a_size_off_the_grid__expect_value_error(size: int) -> None:
         Widget("latency", source="latency", size=size)
 
 
-def test_widget_snapshot_by_default__expect_none() -> None:
-    assert Widget("latency", source="latency").snapshot() is None
+@pytest.mark.parametrize("type", ["line", "timeseries", "button"])
+def test_build_of_a_non_persistable_type_with_persist__expect_type_error(
+    type: str,
+) -> None:
+    with pytest.raises(TypeError, match="can't persist"):
+        build("latency", type=type, persist=True)
+
+
+def test_an_intermediate_base_without_its_own_type__expect_it_not_registered() -> None:
+    class Base(Widget):
+        pass
+
+    assert Base not in WIDGETS.values()
+    assert KeyedWidget not in WIDGETS.values()
 
 
 def test_widget_default__expect_rollup_unsafe() -> None:

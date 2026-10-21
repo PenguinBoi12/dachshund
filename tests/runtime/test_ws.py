@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import suppress
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 import pytest
@@ -10,21 +10,24 @@ from aiohttp.test_utils import TestClient, TestServer
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
 from dachshund.runtime.keys import CLIENTS
-from dachshund.runtime.ws import PUMP_INTERVAL, WS_PATH, broadcast, hydrate, pump, updates
+from dachshund.runtime.ws import (
+    PUMP_INTERVAL,
+    WS_PATH,
+    broadcast,
+    hydrate,
+    pump,
+    updates,
+)
 from dachshund.storage.events import Event
-from dachshund.widgets.base import Widget
+from dachshund.widgets.persistable import PersistableWidget
 
 RECEIVE_TIMEOUT = 5.0
 
 
 @dataclass
-class AppendingCounter(Widget):
+class AppendingCounter(PersistableWidget):
     """A minimal op="append" widget that persists, for exercising the write
     path a persisting BarChart (op="replace") never touches."""
-
-    _: KW_ONLY
-
-    persist: bool = False
 
     total: float = field(default=0.0, init=False, repr=False, compare=False)
 
@@ -32,11 +35,10 @@ class AppendingCounter(Widget):
     op: ClassVar[str] = "append"
 
     def accumulate(self, event: Event) -> None:
-        if self.persist:
-            self.total += 1
+        self.total += 1
 
-    def snapshot(self) -> dict[str, Any] | None:
-        return {"total": self.total} if self.persist else None
+    def snapshot(self) -> dict[str, Any]:
+        return {"total": self.total}
 
     def restore(self, data: dict[str, Any]) -> None:
         self.total = data.get("total", 0.0)
@@ -416,6 +418,19 @@ async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persis
 
 
 @pytest.mark.asyncio
+async def test_updates_of_a_plain_bar__expect_nothing_accumulated() -> None:
+    dashboard = Dashboard(path=":memory:")
+    chart = dashboard.chart("commands", type="bar", x="name")
+
+    dashboard.emit("commands", name="/ban", value=1)
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+    await updates(dashboard, events)
+
+    assert chart.state.entries == {}  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
 async def test_updates_of_a_persisting_append_widget__expect_it_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
@@ -479,7 +494,9 @@ async def test_updates_of_a_paginated_widget__expect_events_not_reread() -> None
 
 
 @pytest.mark.asyncio
-async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected() -> None:
+async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected() -> (
+    None
+):
     dashboard = Dashboard(path=":memory:")
     dashboard.chart("commands", type="bar", x="name")
 

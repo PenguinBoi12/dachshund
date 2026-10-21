@@ -115,15 +115,6 @@ def test_table_with_persist_and_no_key__expect_value_error() -> None:
         Table("sessions", source="sessions", columns=["user"], persist=True)
 
 
-def test_table_accumulate_without_persist__expect_nothing_kept() -> None:
-    table = Table("sessions", source="sessions", columns=["user"], key="user")
-
-    table.accumulate(Event("sessions", {"user": "ada"}))
-
-    assert table.state.entries == {}
-    assert table.snapshot() is None
-
-
 def test_table_accumulate_with_persist__expect_the_row_kept() -> None:
     table = Table(
         "sessions", source="sessions", columns=["user", "ip"], key="user", persist=True
@@ -375,7 +366,9 @@ async def test_table_page_with_a_sync_loader__expect_its_rows_and_cursor() -> No
 
 @pytest.mark.asyncio
 async def test_table_page_with_an_async_loader__expect_its_rows_and_cursor() -> None:
-    async def load(ctx, cursor: str | None, page_size: int) -> tuple[list[dict], str | None]:
+    async def load(
+        ctx, cursor: str | None, page_size: int
+    ) -> tuple[list[dict], str | None]:
         return [{"user": "bob"}], None
 
     table = Table("sessions", source="sessions", columns=["user"], loader=load)
@@ -390,7 +383,9 @@ async def test_table_page_with_an_async_loader__expect_its_rows_and_cursor() -> 
 async def test_table_page_with_a_loader__expect_host_loop_passed_through() -> None:
     seen_loop = None
 
-    async def load(ctx, cursor: str | None, page_size: int) -> tuple[list[dict], str | None]:
+    async def load(
+        ctx, cursor: str | None, page_size: int
+    ) -> tuple[list[dict], str | None]:
         nonlocal seen_loop
         seen_loop = asyncio.get_running_loop()
         return [], None

@@ -23,15 +23,8 @@ class Widget:
     whole card, from every event kept for its source. `update` builds a single
     incremental change, and `op` tells the client how to apply it.
 
-    `accumulate`, `snapshot`, and `restore` are optional, for a widget that
-    wants its own state to survive a restart, backed by whatever `Storage`
-    the dashboard is configured with. `persist` isn't declared here on
-    `Widget` itself, each widget type that supports it declares its own, so
-    building one with `persist=True` fails loudly if that type doesn't
-    support it. `Table` and `BarChart` get it from
-    [KeyedWidget][dachshund.widgets.state.KeyedWidget]; a widget shaped
-    differently implements `accumulate`/`snapshot`/`restore` on its own
-    instead.
+    A widget type that can keep its state across a restart subclasses
+    [PersistableWidget][dachshund.PersistableWidget] instead.
 
     Subclasses pair with a renderer registered under the same `type` in the
     client's dispatch table. Set `script` (and optionally `style`) to a file
@@ -97,8 +90,10 @@ class Widget:
                 )
 
         # A widget registers itself here, so a custom one needs nothing more
-        # than a `type` of its own and being imported once.
-        WIDGETS[cls.type] = cls
+        # than a `type` of its own and being imported once. An intermediate
+        # base without its own `type` is never built by name.
+        if "type" in cls.__dict__:
+            WIDGETS[cls.type] = cls
 
     def __post_init__(self) -> None:
         if not 1 <= self.size <= MAX_SIZE:
@@ -163,16 +158,6 @@ class Widget:
         """Build the change a single new event makes, if it makes one."""
         raise NotImplementedError
 
-    def accumulate(self, event: Event) -> None:
-        """Update this widget's own state from a new event, if it persists anything."""
-
-    def snapshot(self) -> dict[str, Any] | None:
-        """This widget's current state to persist, or `None` if it isn't persisting."""
-        return None
-
-    def restore(self, data: dict[str, Any]) -> None:
-        """Seed this widget's state from a previously persisted snapshot."""
-
 
 def build(name: str, *, type: str = "line", **options: Any) -> Widget:
     """Build a widget of a registered type.
@@ -188,6 +173,11 @@ def build(name: str, *, type: str = "line", **options: Any) -> Widget:
     if type not in WIDGETS:
         known = ", ".join(sorted(WIDGETS))
         raise ValueError(f"There is no {type!r} widget type. Known types: {known}.")
+
+    from dachshund.widgets.persistable import PersistableWidget
+
+    if options.get("persist") and not issubclass(WIDGETS[type], PersistableWidget):
+        raise TypeError(f"{type!r} widgets can't persist.")
 
     options.setdefault("source", name)
 
