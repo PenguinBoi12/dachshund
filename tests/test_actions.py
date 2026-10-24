@@ -236,7 +236,9 @@ async def test_run_action_with_malformed_json__expect_bad_request() -> None:
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.post(
-            "/_actions/ping", data="not json", headers={"Content-Type": "application/json"}
+            "/_actions/ping",
+            data="not json",
+            headers={"Content-Type": "application/json"},
         )
         body = await response.json()
 

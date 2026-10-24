@@ -402,7 +402,12 @@ async def test_cards_with_action_args__expect_them_on_the_card_level_action() ->
     card = (await cards(dashboard))[0][0]
 
     assert card["actions"] == [
-        {"name": "block_user", "label": "block_user", "confirm": False, "args": {"user_id": "42"}}
+        {
+            "name": "block_user",
+            "label": "block_user",
+            "confirm": False,
+            "args": {"user_id": "42"},
+        }
     ]
 
 
@@ -503,7 +508,9 @@ async def test_widget_page_with_a_loader__expect_its_rows_and_host_loop() -> Non
     seen_loop = None
     seen_ctx = None
 
-    async def load(ctx, cursor: str | None, page_size: int) -> tuple[list[dict], str | None]:
+    async def load(
+        ctx, cursor: str | None, page_size: int
+    ) -> tuple[list[dict], str | None]:
         nonlocal seen_loop, seen_ctx
         seen_loop = asyncio.get_running_loop()
         seen_ctx = ctx
@@ -528,9 +535,7 @@ async def test_widget_page_with_a_loader__expect_its_rows_and_host_loop() -> Non
 
 @pytest.mark.asyncio
 async def test_widget_page_of_an_unknown_widget__expect_not_found() -> None:
-    async with TestClient(
-        TestServer(create_app(Dashboard(path=":memory:")))
-    ) as client:
+    async with TestClient(TestServer(create_app(Dashboard(path=":memory:")))) as client:
         response = await client.get("/_widgets/nope/page")
 
     assert response.status == 404

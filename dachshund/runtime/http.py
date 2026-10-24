@@ -63,12 +63,14 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
         "title": heading(widget),
         "size": widget.size,
         "payload": json.dumps(payload),
-        "actions": []
-        if widget.renders_own_actions
-        else [
-            action_card(dashboard.actions, name, widget.action_args.get(name))
-            for name in widget.actions
-        ],
+        "actions": (
+            []
+            if widget.renders_own_actions
+            else [
+                action_card(dashboard.actions, name, widget.action_args.get(name))
+                for name in widget.actions
+            ]
+        ),
     }
 
 

@@ -241,7 +241,9 @@ async def test_compact_before_the_interval_elapses__expect_the_second_call_a_noo
 ) -> None:
     store = make_store(tmp_path / "events.db", retention=0.0)
     calls = []
-    monkeypatch.setattr(store, "_compact", lambda skip_rollup=frozenset(): calls.append(None))
+    monkeypatch.setattr(
+        store, "_compact", lambda skip_rollup=frozenset(): calls.append(None)
+    )
 
     await store.compact()
     await store.compact()

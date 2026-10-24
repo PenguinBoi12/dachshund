@@ -101,7 +101,8 @@ def resolve_row_actions(
         return
 
     resolved = [
-        action_card(actions, name, widget.action_args.get(name)) for name in widget.actions
+        action_card(actions, name, widget.action_args.get(name))
+        for name in widget.actions
     ]
 
     for row in payload.get("rows", []):
