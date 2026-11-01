@@ -334,3 +334,23 @@ async def test_events_when_raw_alone_fills_the_limit__expect_rollups_untouched(
     events = await store.events("latency")
 
     assert [event.payload["value"] for event in events] == [2, 3]
+
+
+@pytest.mark.asyncio
+async def test_compact_on_a_freshly_booted_machine__expect_the_first_call_to_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(time, "monotonic", lambda: 5.0)
+    store = make_store(tmp_path / "events.db", retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append([Event("latency", {"value": 10}, at=old)])
+    await store.compact()
+
+    rows = (
+        db.connect(str(tmp_path / "events.db"))
+        .execute("SELECT count FROM event_rollups")
+        .fetchall()
+    )
+
+    assert rows == [(1,)]
