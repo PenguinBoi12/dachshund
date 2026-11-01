@@ -188,7 +188,7 @@ class Runtime:
                 return
 
             standing_by = True
-            logger.info(
+            logger.critical(
                 "%s:%s is already taken, standing by and retrying in the "
                 "background in case the current owner goes away.",
                 self.host,

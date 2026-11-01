@@ -71,6 +71,23 @@ def test_start_with_a_taken_port__expect_standing_by(taken_port: int) -> None:
         runtime.stop()
 
 
+def test_start_with_a_taken_port__expect_a_critical_log(
+    taken_port: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    runtime = Runtime(build_app, port=taken_port)
+
+    with caplog.at_level("CRITICAL", logger="dachshund"):
+        runtime.start()
+
+    try:
+        assert any(
+            record.levelname == "CRITICAL" and "already taken" in record.getMessage()
+            for record in caplog.records
+        )
+    finally:
+        runtime.stop()
+
+
 def test_start_with_a_taken_port__expect_failover_once_freed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
