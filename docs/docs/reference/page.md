@@ -8,10 +8,11 @@ from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
 
-latency = page.add(TimeSeriesChart("latency"))
-errors = page.add(Number("errors"))
-users = page.add(Number("users"))
-page.row(latency, page.column(errors, users), widths=(2, 1))
+page.row(
+    TimeSeriesChart("latency"),
+    page.column(Number("errors"), Number("users")),
+    widths=(2, 1),
+)
 
 dachshund.include(page)
 ```

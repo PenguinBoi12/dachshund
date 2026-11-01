@@ -75,8 +75,8 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
 
 async def cards(
     dashboard: Dashboard, page: str = DEFAULT_PAGE
-) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]]]:
-    """Build the cards of `page`: its rows, then the cards in no row.
+) -> list[list[dict[str, Any]]]:
+    """Build the cards of `page`, one list per row.
 
     A column in a row comes out as `{"column": [cards]}`. Every item of a
     row carries its `weight`, its share of the row's width.
@@ -85,10 +85,9 @@ async def cards(
     async def build(name: str) -> dict[str, Any]:
         return await card(dashboard, dashboard.widgets[name])
 
-    rows, flow = dashboard.layout(page)
     built_rows = []
 
-    for row in rows:
+    for row in dashboard.layout(page):
         built = []
 
         for index, item in enumerate(row.items):
@@ -101,7 +100,7 @@ async def cards(
 
         built_rows.append(built)
 
-    return built_rows, [await build(name) for name in flow]
+    return built_rows
 
 
 def page_names(dashboard: Dashboard) -> list[str]:
@@ -116,7 +115,7 @@ def page_names(dashboard: Dashboard) -> list[str]:
         if page.parent is None and name != DEFAULT_PAGE
     ]
 
-    if not declared or any(dashboard.layout(DEFAULT_PAGE)):
+    if not declared or dashboard.layout(DEFAULT_PAGE):
         return [DEFAULT_PAGE, *declared]
 
     return declared
@@ -235,7 +234,7 @@ async def render_page(request: web.Request, path: str) -> web.Response:
     names = page_names(dashboard)
     page = shown(dashboard, path)
     top = page.split("/", 1)[0]
-    rows, flow = await cards(dashboard, page)
+    rows = await cards(dashboard, page)
 
     html = template.render(
         name=dashboard.name or FALLBACK_NAME,
@@ -244,7 +243,6 @@ async def render_page(request: web.Request, path: str) -> web.Response:
         page=page,
         heading=page_title(dashboard, top),
         rows=rows,
-        flow=flow,
         pages=[
             {
                 "url": "/" if name == names[0] else f"/{name}",

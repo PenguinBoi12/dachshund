@@ -147,3 +147,58 @@ def test_row_with_a_width_per_item_missing__expect_value_error() -> None:
 def test_row_with_a_zero_width__expect_value_error() -> None:
     with pytest.raises(ValueError, match="at least 1"):
         Row(["latency", "errors"], (2, 0))
+
+
+def test_add__expect_a_full_width_row_per_widget() -> None:
+    page = Page("requests")
+    page.add(TimeSeriesChart("latency"))
+    page.add(TimeSeriesChart("errors"))
+
+    assert page.rows == [Row(["latency"]), Row(["errors"])]
+
+
+def test_row_of_new_widgets__expect_them_added_and_placed() -> None:
+    page = Page("requests")
+    latency = TimeSeriesChart("latency")
+
+    page.row(latency, TimeSeriesChart("errors"), widths=(2, 1))
+
+    assert page.widgets["latency"] is latency
+    assert page.rows == [Row(["latency", "errors"], (2, 1))]
+
+
+def test_row_of_an_added_widget__expect_it_moved_out_of_its_row() -> None:
+    page = Page("requests")
+    latency = page.add(TimeSeriesChart("latency"))
+    page.add(TimeSeriesChart("errors"))
+
+    page.row(TimeSeriesChart("cpu"), latency)
+
+    assert page.rows == [Row(["errors"]), Row(["cpu", "latency"])]
+
+
+def test_row_taking_the_last_widget_of_a_column__expect_the_column_dropped() -> None:
+    page = Page("requests")
+    errors = TimeSeriesChart("errors")
+    page.row(TimeSeriesChart("latency"), page.column(errors), widths=(2, 1))
+
+    page.row(errors)
+
+    assert page.rows == [Row(["latency"], (2,)), Row(["errors"])]
+
+
+def test_row_of_another_widget_with_a_taken_name__expect_value_error() -> None:
+    page = Page("requests")
+    page.add(TimeSeriesChart("latency"))
+
+    with pytest.raises(ValueError, match="already exists"):
+        page.row(TimeSeriesChart("latency"))
+
+
+def test_row_with_mismatched_widths__expect_nothing_added() -> None:
+    page = Page("requests")
+
+    with pytest.raises(ValueError, match="widths has 1 values for 2 items"):
+        page.row(TimeSeriesChart("latency"), TimeSeriesChart("errors"), widths=(2,))
+
+    assert page.widgets == {}

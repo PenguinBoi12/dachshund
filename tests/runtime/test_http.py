@@ -184,7 +184,7 @@ async def test_cards__expect_a_series_aware_payload() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("send_latency", y=["p50", "p95"]))
 
-    payload = json.loads((await cards(dashboard))[1][0]["payload"])
+    payload = json.loads((await cards(dashboard))[0][0]["payload"])
 
     assert payload["series"] == ["p50", "p95"]
     assert payload["y"] == [[], []]
@@ -338,7 +338,7 @@ async def test_cards_with_a_table__expect_each_row_carrying_resolved_actions() -
     dashboard.emit("sessions", user="ada")
     await dashboard.events.append(dashboard.drain())
 
-    card = (await cards(dashboard))[1][0]
+    card = (await cards(dashboard))[0][0]
     payload = json.loads(card["payload"])
 
     assert card["actions"] == []
@@ -356,7 +356,7 @@ async def test_cards_with_a_table_and_an_unregistered_action__expect_a_sensible_
     dashboard.emit("sessions", user="ada")
     await dashboard.events.append(dashboard.drain())
 
-    payload = json.loads((await cards(dashboard))[1][0]["payload"])
+    payload = json.loads((await cards(dashboard))[0][0]["payload"])
 
     assert payload["rows"][0]["actions"] == [
         {"name": "nope", "label": "nope", "confirm": False, "args": {}}
@@ -402,7 +402,7 @@ async def test_cards_with_action_args__expect_them_on_the_card_level_action() ->
         )
     )
 
-    card = (await cards(dashboard))[1][0]
+    card = (await cards(dashboard))[0][0]
 
     assert card["actions"] == [
         {
@@ -562,7 +562,7 @@ async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
         dashboard.emit("sessions", user=f"user{i}")
     await dashboard.events.append(dashboard.drain())
 
-    card = (await cards(dashboard))[1][0]
+    card = (await cards(dashboard))[0][0]
     payload = json.loads(card["payload"])
 
     assert len(payload["rows"]) == 5
@@ -576,16 +576,14 @@ def test_page_names_with_nothing_declared__expect_only_default() -> None:
 def test_page_names_with_leftovers__expect_default_first() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
-    dashboard.row("errors", page="requests")
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
 
     assert page_names(dashboard) == ["default", "requests"]
 
 
 def test_page_names_with_default_emptied__expect_it_left_out() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.row("latency", page="requests")
+    dashboard.add(TimeSeriesChart("latency"), page="requests")
 
     assert page_names(dashboard) == ["requests"]
 
@@ -601,17 +599,17 @@ def test_page_title__expect_the_declared_title_then_fallbacks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cards__expect_rows_then_the_flow() -> None:
+async def test_cards__expect_one_list_per_row() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
     dashboard.add(TimeSeriesChart("errors"))
-    dashboard.add(TimeSeriesChart("cpu"))
-    dashboard.row("cpu", "latency")
+    dashboard.row(TimeSeriesChart("cpu"), TimeSeriesChart("latency"))
 
-    rows, flow = await cards(dashboard)
+    rows = await cards(dashboard)
 
-    assert [[card["name"] for card in row] for row in rows] == [["cpu", "latency"]]
-    assert [card["name"] for card in flow] == ["errors"]
+    assert [[card["name"] for card in row] for row in rows] == [
+        ["errors"],
+        ["cpu", "latency"],
+    ]
 
 
 @pytest.mark.asyncio
@@ -622,7 +620,7 @@ async def test_cards_with_a_column__expect_its_cards_nested() -> None:
     cpu = dashboard.add(TimeSeriesChart("cpu"))
     dashboard.row(latency, dashboard.column(errors, cpu))
 
-    rows, _ = await cards(dashboard)
+    rows = await cards(dashboard)
 
     assert rows[0][0]["name"] == "latency"
     assert [card["name"] for card in rows[0][1]["column"]] == ["errors", "cpu"]
@@ -632,8 +630,7 @@ async def test_cards_with_a_column__expect_its_cards_nested() -> None:
 async def test_named_page__expect_only_its_widgets() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
-    dashboard.row("errors", page="requests")
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         index = await (await client.get("/")).text()
@@ -649,9 +646,8 @@ async def test_named_page__expect_only_its_widgets() -> None:
 async def test_index_with_several_pages__expect_a_nav_marking_the_current() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
     dashboard.page("requests", title="Requests")
-    dashboard.row("errors", page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         body = await (await client.get("/requests")).text()
@@ -674,8 +670,7 @@ async def test_index_with_one_page__expect_no_nav() -> None:
 @pytest.mark.asyncio
 async def test_index_with_default_emptied__expect_the_first_declared_page() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.row("latency", page="requests")
+    dashboard.add(TimeSeriesChart("latency"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         body = await (await client.get("/")).text()
@@ -686,8 +681,7 @@ async def test_index_with_default_emptied__expect_the_first_declared_page() -> N
 @pytest.mark.asyncio
 async def test_named_page_of_the_first_page__expect_a_redirect_to_index() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.row("latency", page="requests")
+    dashboard.add(TimeSeriesChart("latency"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get("/requests", allow_redirects=False)
@@ -713,8 +707,7 @@ async def test_named_page_declared_without_widgets__expect_the_empty_state() -> 
 @pytest.mark.asyncio
 async def test_index__expect_the_page_shown_named_on_the_body() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.row("latency", page="requests")
+    dashboard.add(TimeSeriesChart("latency"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         body = await (await client.get("/")).text()
@@ -771,20 +764,19 @@ async def test_unknown_tab_url__expect_not_found() -> None:
 @pytest.mark.asyncio
 async def test_index_with_a_column__expect_its_cards_stacked() -> None:
     dashboard = Dashboard(path=":memory:")
-    latency = dashboard.add(TimeSeriesChart("latency"))
-    errors = dashboard.add(TimeSeriesChart("errors"))
-    cpu = dashboard.add(TimeSeriesChart("cpu"))
+    dashboard.row(
+        TimeSeriesChart("latency"),
+        dashboard.column(TimeSeriesChart("errors"), TimeSeriesChart("cpu")),
+    )
     dashboard.add(TimeSeriesChart("disk"))
-    dashboard.row(latency, dashboard.column(errors, cpu))
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         body = await (await client.get("/")).text()
 
-    column = body[body.index('class="column"') : body.index('class="flow"')]
-    flow = body[body.index('class="flow"') :]
+    column = body[body.index('class="column"') : body.index('data-widget="disk"')]
 
     assert 'data-widget="errors"' in column and 'data-widget="cpu"' in column
-    assert 'data-widget="disk"' in flow
+    assert body.count('<div class="row">') == 2
 
 
 @pytest.mark.asyncio

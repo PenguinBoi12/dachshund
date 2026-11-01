@@ -405,47 +405,46 @@ def test_row_of_an_unknown_widget__expect_value_error() -> None:
         Dashboard(path=":memory:").row("ghost")
 
 
-def test_row__expect_it_recorded_on_the_named_page() -> None:
+def test_row_of_new_widgets__expect_them_added_on_the_named_page() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
 
-    dashboard.row("latency", "errors", page="requests")
+    dashboard.row(
+        TimeSeriesChart("latency"), TimeSeriesChart("errors"), page="requests"
+    )
 
     assert dashboard.pages["requests"].rows == [Row(["latency", "errors"])]
+    assert dashboard.widget_page("errors") == "requests"
 
 
-def test_layout_with_nothing_declared__expect_every_widget_in_the_flow() -> None:
+def test_add__expect_a_row_per_widget_in_call_order() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
     dashboard.add(TimeSeriesChart("errors"))
 
-    assert dashboard.layout() == ([], ["latency", "errors"])
+    assert dashboard.layout() == [Row(["latency"]), Row(["errors"])]
 
 
-def test_layout_with_some_widgets_placed__expect_leftovers_in_the_flow() -> None:
+def test_row_of_added_widgets__expect_them_moved_out_of_their_rows() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
     dashboard.add(TimeSeriesChart("errors"))
     dashboard.add(TimeSeriesChart("cpu"))
 
-    dashboard.row("errors")
+    dashboard.row("cpu", "latency", widths=(1, 2))
 
-    assert dashboard.layout() == ([Row(["errors"])], ["latency", "cpu"])
+    assert dashboard.layout() == [Row(["errors"]), Row(["cpu", "latency"], (1, 2))]
 
 
 def test_layout_of_a_page_other_than_default__expect_only_its_own_rows() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
 
-    dashboard.row("errors", page="requests")
-
-    assert dashboard.layout("requests") == ([Row(["errors"])], [])
+    assert dashboard.layout("requests") == [Row(["errors"])]
 
 
 def test_layout_of_an_undeclared_page__expect_an_empty_layout() -> None:
-    assert Dashboard(path=":memory:").layout("requests") == ([], [])
+    assert Dashboard(path=":memory:").layout("requests") == []
 
 
 def test_widget_page_never_placed__expect_default() -> None:
@@ -457,32 +456,29 @@ def test_widget_page_never_placed__expect_default() -> None:
 
 def test_widget_page_placed_by_row__expect_its_page() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.add(TimeSeriesChart("latency"))
-    dashboard.row("latency", page="requests")
+    dashboard.add(TimeSeriesChart("latency"), page="requests")
 
     assert dashboard.widget_page("latency") == "requests"
 
 
 def test_module_level_page_and_row__expect_the_default_dashboard() -> None:
     dachshund.default(path=":memory:")
-    dachshund.add(TimeSeriesChart("latency"))
+    dachshund.add(TimeSeriesChart("latency"), page="requests")
 
     dachshund.page("requests", title="Requests")
-    dachshund.row("latency", page="requests")
 
     dashboard = dachshund.default()
     assert dashboard.pages["requests"].title == "Requests"
-    assert dashboard.layout("requests") == ([Row(["latency"])], [])
+    assert dashboard.layout("requests") == [Row(["latency"])]
 
 
-def test_add_on_a_page__expect_it_in_that_pages_flow() -> None:
+def test_add_on_a_page__expect_its_row_on_that_page() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
     dashboard.add(TimeSeriesChart("errors"), page="requests")
 
-    assert dashboard.layout() == ([], ["latency"])
-    assert dashboard.layout("requests") == ([], ["errors"])
-    assert "requests" in dashboard.pages
+    assert dashboard.layout() == [Row(["latency"])]
+    assert dashboard.layout("requests") == [Row(["errors"])]
 
 
 def test_row_naming_a_widget_on_another_page__expect_value_error() -> None:
@@ -493,19 +489,20 @@ def test_row_naming_a_widget_on_another_page__expect_value_error() -> None:
         dashboard.row("errors")
 
 
-def test_row_with_a_column__expect_rows_then_flow() -> None:
+def test_row_with_a_column__expect_the_column_in_one_slot() -> None:
     dashboard = Dashboard(path=":memory:")
-    latency = dashboard.add(TimeSeriesChart("latency"))
-    errors = dashboard.add(TimeSeriesChart("errors"))
-    cpu = dashboard.add(TimeSeriesChart("cpu"))
     dashboard.add(TimeSeriesChart("disk"))
 
-    dashboard.row(latency, dashboard.column(errors, cpu))
-
-    assert dashboard.layout() == (
-        [Row(["latency", Column(["errors", "cpu"])])],
-        ["disk"],
+    dashboard.row(
+        TimeSeriesChart("latency"),
+        dashboard.column(TimeSeriesChart("errors"), TimeSeriesChart("cpu")),
     )
+
+    assert dashboard.layout() == [
+        Row(["disk"]),
+        Row(["latency", Column(["errors", "cpu"])]),
+    ]
+    assert dashboard.widget_page("cpu") == "default"
 
 
 def test_include__expect_pages_tabs_widgets_and_actions_registered() -> None:
@@ -526,8 +523,8 @@ def test_include__expect_pages_tabs_widgets_and_actions_registered() -> None:
     dashboard.include(activity)
 
     assert list(dashboard.pages) == ["overview", "activity", "activity/commands"]
-    assert dashboard.layout("overview") == ([Row(["errors", "latency"])], [])
-    assert dashboard.layout("activity/commands") == ([], ["on_command"])
+    assert dashboard.layout("overview") == [Row(["errors", "latency"])]
+    assert dashboard.layout("activity/commands") == [Row(["on_command"])]
     assert dashboard.widget_page("on_command") == "activity/commands"
     assert dashboard.actions["flush"].handler is flush
     assert overview.included and commands.included
@@ -544,7 +541,7 @@ def test_include_with_a_taken_name__expect_nothing_added() -> None:
         dashboard.include(page)
 
     assert list(dashboard.widgets) == ["latency"]
-    assert dashboard.pages == {}
+    assert list(dashboard.pages) == ["default"]
     assert not page.included
 
 
@@ -633,7 +630,6 @@ def test_row_on_a_page_with_tabs__expect_value_error() -> None:
     page = Page("activity")
     page.tab("commands")
     dashboard.include(page)
-    dashboard.add(TimeSeriesChart("latency"))
 
     with pytest.raises(ValueError, match="has tabs"):
-        dashboard.row("latency", page="activity")
+        dashboard.row(TimeSeriesChart("latency"), page="activity")

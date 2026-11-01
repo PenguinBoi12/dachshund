@@ -40,11 +40,7 @@
   {% endfor %}
 </div>
 {% endfor %}
-{% if flow %}
-<div class="flow">
-  {% for widget in flow %}{{ card(widget) }}{% endfor %}
-</div>
-{% elif not rows %}
+{% if not rows %}
 <div class="row">
   <section class="card empty">
     <h2 class="card-title">Nothing here yet</h2>

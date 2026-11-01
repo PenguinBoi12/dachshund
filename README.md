@@ -27,9 +27,7 @@ import dachshund
 from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
-latency = page.add(TimeSeriesChart("latency"))
-users = page.add(Number("users"))
-page.row(latency, users, widths=(2, 1))
+page.row(TimeSeriesChart("latency"), Number("users"))
 
 dachshund.include(page)
 dachshund.init("My service")

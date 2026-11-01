@@ -29,9 +29,7 @@ from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
 
-latency = page.add(TimeSeriesChart("latency"))
-users = page.add(Number("users"))
-page.row(latency, users)
+page.row(TimeSeriesChart("latency"), Number("users"))
 ```
 
 #### 3- Start the dashboard

@@ -63,13 +63,44 @@ def row_names(row: Row) -> list[str]:
 
 
 def build_row(
-    items: Iterable["Widget | str | Column"], widths: Iterable[int] | None
+    items: Iterable[Widget | str | Column],
+    widths: Iterable[int] | None,
+    take: Callable[[Widget | str], str],
 ) -> Row:
-    """A row from widgets, names and columns."""
+    """A row from widgets, names and columns, `take` naming each widget."""
+    items = list(items)
+    checked = Row(["" for _ in items], tuple(widths) if widths is not None else None)
+
     return Row(
-        [item if isinstance(item, Column) else names_of([item])[0] for item in items],
-        tuple(widths) if widths is not None else None,
+        [item if isinstance(item, Column) else take(item) for item in items],
+        checked.widths,
     )
+
+
+def unplace(rows: list[Row], names: Iterable[str]) -> None:
+    """Remove `names` from `rows`, dropping columns and rows left empty."""
+    gone = set(names)
+
+    for row in list(rows):
+        kept: list[str | Column] = []
+        weights: list[int] = []
+
+        for index, item in enumerate(row.items):
+            if isinstance(item, Column):
+                item = Column([name for name in item.names if name not in gone])
+                keep = bool(item.names)
+            else:
+                keep = item not in gone
+
+            if keep:
+                kept.append(item)
+                weights.append(row.weight(index))
+
+        if not kept:
+            rows.remove(row)
+        else:
+            row.items = kept
+            row.widths = tuple(weights) if row.widths else None
 
 
 class Page:
@@ -83,10 +114,12 @@ class Page:
     ```python
     page = Page("overview", title="Overview")
 
-    latency = page.add(TimeSeriesChart("latency"))
-    errors = page.add(Number("errors"))
-    users = page.add(Number("users"))
-    page.row(latency, page.column(errors, users), widths=(2, 1))
+    page.add(Text("summary"))
+    page.row(
+        TimeSeriesChart("latency"),
+        page.column(Number("errors"), Number("users")),
+        widths=(2, 1),
+    )
 
     @page.action("flush", label="Flush cache")
     def flush(ctx): ...
@@ -102,11 +135,12 @@ class Page:
 
     ## Layout
 
-    - A `row()` splits its width between its items, equally unless given
-      `widths`.
-    - A `column()` stacks widgets top to bottom, in one slot of a row.
-    - Widgets in no row fill a grid of equal cards below the rows. A lone card
-      spans the full width.
+    - `add()` gives a widget a full-width row of its own.
+    - `row()` puts widgets side by side, equally unless given `widths`.
+    - `column()` stacks widgets top to bottom, in one slot of a row.
+
+    Rows show in the order they were made. `row()` and `column()` take new
+    widgets, or ones already on the page, which move out of their old row.
 
     ## Tabs
 
@@ -133,22 +167,15 @@ class Page:
         return f"{self.parent.path}/{self.name}" if self.parent else self.name
 
     def add(self, widget: W) -> W:
-        """Add a widget on the page and return it."""
-        self._check_open()
-
-        if self.tabs:
-            raise ValueError(f"Page {self.path!r} has tabs, add widgets to one.")
-
-        if widget.name in self.widgets:
-            raise ValueError(f"A widget named {widget.name!r} already exists.")
-
-        self.widgets[widget.name] = widget
+        """Add a widget on the page, in a full-width row of its own, and return it."""
+        self._register(widget)
+        self.rows.append(Row([widget.name]))
 
         return widget
 
     def column(self, *widgets: Widget | str) -> Column:
-        """Stack widgets of this page, for use in a `row()`."""
-        return Column(self._known(names_of(widgets)))
+        """Stack widgets top to bottom, for use in a `row()`."""
+        return Column([self._take(widget) for widget in widgets])
 
     def row(
         self, *items: Widget | str | Column, widths: Iterable[int] | None = None
@@ -162,8 +189,8 @@ class Page:
         """
         self._check_open()
 
-        row = build_row(items, widths)
-        self._known(row_names(row))
+        row = build_row(items, widths, self._take)
+        unplace(self.rows, row_names(row))
         self.rows.append(row)
 
     def tab(self, name: str, *, title: str | None = None) -> "Page":
@@ -212,13 +239,29 @@ class Page:
         """This page and its tabs, recursively."""
         return [self, *(page for tab in self.tabs.values() for page in tab.every())]
 
-    def _known(self, names: list[str]) -> list[str]:
-        unknown = [name for name in names if name not in self.widgets]
+    def _register(self, widget: Widget) -> None:
+        self._check_open()
 
-        if unknown:
-            raise ValueError(f"Not on page {self.path!r}: {', '.join(unknown)}.")
+        if self.tabs:
+            raise ValueError(f"Page {self.path!r} has tabs, add widgets to one.")
 
-        return names
+        if widget.name in self.widgets:
+            raise ValueError(f"A widget named {widget.name!r} already exists.")
+
+        self.widgets[widget.name] = widget
+
+    def _take(self, item: Widget | str) -> str:
+        """The name of `item`, registering it if it's a widget new to the page."""
+        if isinstance(item, Widget):
+            if self.widgets.get(item.name) is not item:
+                self._register(item)
+
+            return item.name
+
+        if item not in self.widgets:
+            raise ValueError(f"Not on page {self.path!r}: {item}.")
+
+        return item
 
     def _check_open(self) -> None:
         if self.included:

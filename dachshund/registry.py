@@ -17,8 +17,8 @@ from dachshund.layout import (
     Row,
     W,
     build_row,
-    names_of,
     row_names,
+    unplace,
 )
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
@@ -142,7 +142,7 @@ class Dashboard:
         self.events.close()
 
     def add(self, widget: W, *, page: str | None = None) -> W:
-        """Add a widget and return it.
+        """Add a widget, in a full-width row of its own, and return it.
 
         ## Example
 
@@ -156,20 +156,9 @@ class Dashboard:
         - `page` (`str`) - The page it goes on, declared if new. Defaults to
           `"default"`.
         """
-        if widget.name in self.widgets:
-            raise ValueError(f"A widget named {widget.name!r} already exists.")
-
-        self._check_storage(widget)
-
-        target = self.page(page) if page is not None else None
-
-        if target is not None and target.tabs:
-            raise ValueError(f"Page {page!r} has tabs, add widgets to one.")
-
-        self.widgets[widget.name] = widget
-
-        if page is not None:
-            self.placements[widget.name] = page
+        target = page or DEFAULT_PAGE
+        self._register(widget, target)
+        self.pages[target].rows.append(Row([widget.name]))
 
         return widget
 
@@ -295,7 +284,7 @@ class Dashboard:
             self.pages[each.path] = each
 
             for widget in each.widgets.values():
-                self.add(widget, page=each.path)
+                self._register(widget, each.path)
 
             self.actions.update(each.actions)
             each.included = True
@@ -331,7 +320,7 @@ class Dashboard:
 
     def column(self, *widgets: Widget | str) -> Column:
         """Stack widgets top to bottom, for use in a `row()`."""
-        return Column(self._known(names_of(widgets)))
+        return Column([self._take(widget, None) for widget in widgets])
 
     def row(
         self,
@@ -341,7 +330,8 @@ class Dashboard:
     ) -> None:
         """Lay widgets out side by side, in a row of their own.
 
-        A widget on no page yet moves to `page`.
+        Widgets new to the dashboard are added on `page`. Widgets already
+        on it move out of their old row.
 
         ## Example
 
@@ -355,8 +345,13 @@ class Dashboard:
           [Row][dachshund.Row]. Defaults to equal shares.
         - `page` (`str`) - The page the row goes on. Defaults to `"default"`.
         """
-        row = build_row(items, widths)
-        names = self._known(row_names(row))
+        target = self.page(page)
+
+        if target.tabs:
+            raise ValueError(f"Page {page!r} has tabs, add rows to one.")
+
+        row = build_row(items, widths, lambda item: self._take(item, page))
+        names = row_names(row)
         elsewhere = [name for name in names if self.widget_page(name, page) != page]
 
         if elsewhere:
@@ -364,11 +359,7 @@ class Dashboard:
                 f"row() names widgets on another page: {', '.join(elsewhere)}."
             )
 
-        target = self.page(page)
-
-        if target.tabs:
-            raise ValueError(f"Page {page!r} has tabs, add rows to one.")
-
+        unplace(target.rows, names)
         target.rows.append(row)
 
         for name in names:
@@ -378,26 +369,19 @@ class Dashboard:
         """The page a widget appears on."""
         return self.placements.get(name, default)
 
-    def layout(self, page: str = DEFAULT_PAGE) -> tuple[list[Row], list[str]]:
-        """`page`'s rows in display order, then the widgets in no row.
+    def layout(self, page: str = DEFAULT_PAGE) -> list[Row]:
+        """`page`'s rows, in display order.
 
         ## Example
 
         ```python
         dashboard.layout("requests")
-        # ([Row(["latency", Column(["errors", "users"])], (2, 1))], ["cpu"])
+        # [Row(["latency", Column(["errors", "users"])], (2, 1))]
         ```
         """
         declared = self.pages.get(page)
-        rows = list(declared.rows) if declared else []
-        placed = {name for row in rows for name in row_names(row)}
-        flow = [
-            name
-            for name in self.widgets
-            if name not in placed and self.widget_page(name) == page
-        ]
 
-        return rows, flow
+        return list(declared.rows) if declared else []
 
     def _check_storage(self, widget: Widget) -> None:
         if persisting(widget) and self.storage is None:
@@ -407,13 +391,32 @@ class Dashboard:
                 "dachshund.init()."
             )
 
-    def _known(self, names: list[str]) -> list[str]:
-        unknown = [name for name in names if name not in self.widgets]
+    def _register(self, widget: Widget, page: str | None) -> None:
+        if widget.name in self.widgets:
+            raise ValueError(f"A widget named {widget.name!r} already exists.")
 
-        if unknown:
-            raise ValueError(f"No widgets named: {', '.join(unknown)}.")
+        self._check_storage(widget)
 
-        return names
+        if page is not None and self.page(page).tabs:
+            raise ValueError(f"Page {page!r} has tabs, add widgets to one.")
+
+        self.widgets[widget.name] = widget
+
+        if page is not None:
+            self.placements[widget.name] = page
+
+    def _take(self, item: Widget | str, page: str | None) -> str:
+        """The name of `item`, adding it on `page` if it's a new widget."""
+        if isinstance(item, Widget):
+            if self.widgets.get(item.name) is not item:
+                self._register(item, page)
+
+            return item.name
+
+        if item not in self.widgets:
+            raise ValueError(f"No widgets named: {item}.")
+
+        return item
 
     def _create_app(self) -> web.Application:
         """Build the application that serves this dashboard."""

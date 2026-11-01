@@ -573,8 +573,7 @@ class Recording:
 async def test_broadcast_to_pages__expect_each_told_only_its_widgets() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
-    dashboard.row("errors", page="requests")
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
     app = create_app(dashboard)
 
     overview, requests, everything = Recording(), Recording(), Recording()
@@ -619,8 +618,7 @@ async def test_connect_with_a_page__expect_it_remembered() -> None:
 async def test_emit_while_on_another_page__expect_nothing_pushed() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.add(TimeSeriesChart("latency"))
-    dashboard.add(TimeSeriesChart("errors"))
-    dashboard.row("errors", page="requests")
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         async with client.ws_connect(f"{WS_PATH}?page=requests") as page:

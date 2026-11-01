@@ -8,13 +8,12 @@ from dachshund import Number, Page, Text, TimeSeriesChart
 
 page = Page("overview", title="Overview")
 
-summary = page.add(Text("summary"))
-latency = page.add(TimeSeriesChart("latency", y=["check", "command"]))
-errors = page.add(Number("errors"))
-users = page.add(Number("users"))
-
-page.row(summary)
-page.row(latency, page.column(errors, users))
+page.add(Text("summary"))
+page.row(
+    TimeSeriesChart("latency", y=["check", "command"]),
+    page.column(Number("errors"), Number("users")),
+    widths=(2, 1),
+)
 
 
 @page.action("flush", label="Flush cache")
@@ -37,10 +36,6 @@ An included page can't be registered on.
 
 ## Layout
 
-```python
-page.row(summary)
-page.row(latency, page.column(errors, users), widths=(2, 1))
-```
 
 ```
 ┌───────────────────────────────┐
@@ -52,12 +47,17 @@ page.row(latency, page.column(errors, users), widths=(2, 1))
 └────────────────────┴──────────┘
 ```
 
-- A `row()` splits its width equally between its items. `widths=(2, 1)` gives the first two thirds.
-- A `column()` stacks widgets top to bottom, in one slot of a row.
-- Widgets in no row fill a grid of equal cards below the rows. A lone card spans the full width.
-- On a narrow screen, row items wrap under each other.
+- `add()` gives a widget a full-width row of its own.
+- `row()` puts widgets side by side, equally unless given `widths`. `widths=(2, 1)` gives the first two thirds.
+- `column()` stacks widgets top to bottom, in one slot of a row.
+- Rows show in the order they were made. On a narrow screen, row items wrap under each other.
 
-`row()` and `column()` take the widgets `add()` returned, or their names.
+`row()` and `column()` take new widgets, or ones already added, which move out of their old row:
+
+```python
+latency = page.add(TimeSeriesChart("latency"))
+page.row(Number("users"), latency)
+```
 
 ## Tabs
 
