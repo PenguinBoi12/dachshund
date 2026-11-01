@@ -1,10 +1,10 @@
 # Persistent Storage
 
-A widget can keep its own state across a restart (see [Persisting it](custom-widgets.md#persisting-it) in the Custom Widgets guide for the widget side of this). None of that is saved anywhere until a dashboard has somewhere to put it. This guide covers setting that up, and writing your own backend if the built-in one doesn't fit.
+A widget built with `persist=True` keeps its state across restarts. That state is saved to the dashboard's `storage`, which this guide sets up. For the widget side, see [Persisting](custom-widgets.md#persisting).
 
-## The built-in backend
+## SQLiteStorage
 
-`SQLiteStorage` is the one dachshund ships. It's self-contained, give it a path and it owns its own file, separate from wherever raw events live:
+The built-in backend, in a SQLite file of its own:
 
 ```python
 import dachshund
@@ -13,22 +13,20 @@ from dachshund.storage.sqlite import SQLiteStorage
 dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
 ```
 
-Without `storage=`, nothing persists. Registering a widget with `persist=True` on a dashboard that has no storage configured raises an error immediately, rather than quietly doing nothing.
+A dashboard has no storage by default. Adding a widget with `persist=True` to one raises an error.
 
 ## Writing your own
 
-`Storage` is a `Protocol`, so conformance is structural: a class with matching `save`/`load` methods works, no dachshund base class to import or subclass.
+A backend is any class with these two methods:
 
 ```python
 async def save(self, key: str, value: dict) -> None: ...
 async def load(self, key: str) -> dict | None: ...
 ```
 
-`save` replaces whatever was under a key. `load` reads it back, or returns `None` if nothing's there yet. That's the whole contract, one key to one JSON-shaped value.
+`save` replaces the value under `key`, and `load` returns it, or `None` for an unknown key.
 
-A backend built on an async driver (an async Postgres or Redis client, for instance) can implement that directly. One built on a synchronous client — most ORMs, a plain file, `requests` — needs its calls kept off the event loop instead; subclass [SyncStorage][dachshund.storage.protocol.SyncStorage] for that and implement `_save`/`_load` as plain synchronous methods, each run through `asyncio.to_thread` for you.
-
-Here's one backed by [SQLModel](https://sqlmodel.tiangolo.com/), for a project that's already using it elsewhere:
+A backend on a synchronous client, such as an ORM, subclasses [SyncStorage][dachshund.storage.protocol.SyncStorage] and writes `_save` and `_load` as plain methods. Each call runs in a thread, so the client must be safe to call from any thread.
 
 ```python
 import json
@@ -67,8 +65,6 @@ class SQLModelStorage(SyncStorage):
 dachshund.init("Ada", storage=SQLModelStorage("sqlite:///widget_state.db"))
 ```
 
-A session-per-call ORM like this is safe to call from any thread, which is what `SyncStorage` needs. `SQLiteStorage` pins a single connection to one thread instead, so it doesn't use `SyncStorage`.
+## Raw events
 
-## Why raw events aren't part of this
-
-Events (what feeds charts like `TimeSeriesChart`) aren't backed by `Storage`, and can't be: they're an unbounded, ever-growing log with windowed queries (`WHERE source = ? ORDER BY at LIMIT ?`), while `Storage` is a single key replaced wholesale each time. Forcing an event log through `save`/`load` would mean loading the entire history and rewriting it on every single event, and `load` alone has no way to ask for "just the last 500." `Storage` is deliberately scoped to what a widget's own derived state actually needs, small, and replaced as a whole, not appended to forever.
+The events feeding charts aren't saved to `storage`. They're kept in their own SQLite file, the dashboard's `path`, and trimmed over time.

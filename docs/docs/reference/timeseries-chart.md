@@ -1,11 +1,12 @@
 # Time Series Chart
 
-`TimeSeriesChart` draws a line over time, a point per event. There is no `x` to give: a point sits where its event happened, read from `y`.
+`TimeSeriesChart` draws a line over time, one point per event.
 
 ```python
 import dachshund
+from dachshund import TimeSeriesChart
 
-dachshund.chart("latency", type="timeseries")
+dachshund.add(TimeSeriesChart("latency"))
 dachshund.emit("latency", value=96)
 ```
 

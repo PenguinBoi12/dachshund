@@ -1,11 +1,12 @@
 # Bar Chart
 
-`BarChart` totals the events of its source into a bar per category. `x` names the field the categories come from and `y` what is totalled.
+`BarChart` totals a field of its events into one bar per category.
 
 ```python
 import dachshund
+from dachshund import BarChart
 
-dachshund.chart("commands", type="bar", x="name")
+dachshund.add(BarChart("commands", x="name"))
 dachshund.emit("commands", name="/ban", value=1)
 ```
 

@@ -1,11 +1,11 @@
 # Events
 
-`Event` is a single thing that happened: a source name, the fields it carried, and when it happened. `dachshund.emit()` builds one from whatever you pass it, and widgets read it back through `render` and `update`.
+`Event` is one thing that happened: a source, its fields and when. `dachshund.emit()` builds one.
 
 ```python
-from dachshund import Event
+import dachshund
 
-Event("latency", {"value": 96})
+dachshund.emit("latency", value=96)
 ```
 
 ::: dachshund.storage.events.Event

@@ -1,17 +1,13 @@
 # Custom Widgets
 
-A widget is a card on the dashboard, built from the events emitted under its source. The built-in charts are all widgets themselves: see [Time Series Chart](../reference/timeseries-chart.md), [Line Chart](../reference/line-chart.md), and [Bar Chart](../reference/bar-chart.md). This guide covers building your own by subclassing [Widget](../reference/widget.md).
+A widget is a Python class building a payload from events, and a JavaScript renderer drawing it. Every built-in widget is made this way. This guide builds a gauge.
 
-## Start with the class
+#### 1- Write the class
 
-A widget needs a `type` of its own and an `op` telling the client how to apply an update:
-
-- `op = "replace"` rebuilds the whole card on every event.
-- `op = "append"` adds one point to what's already drawn.
-
-Subclassing `Widget` registers it the moment the class is defined. There's no separate registration call.
+Subclass [Widget](../reference/widget.md) with a `type` of its own. The class is registered when it's defined.
 
 ```python
+# gauge.py
 from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -30,83 +26,21 @@ class Gauge(Widget):
     script: ClassVar[Path] = Path(__file__).parent / "gauge.js"
 ```
 
-`_: KW_ONLY` makes every field declared after it keyword-only, matching how the built-in charts declare their own fields. `y` names the field this gauge reads, and `script` points at the JS file that draws it, covered next.
+- `op = "replace"` redraws the card on every event.
+- `op = "append"` adds one point per event, through `update(event)`. See [LineChart][dachshund.LineChart] for an example.
 
-## render()
+#### 2- Build the payload
 
-`render(events)` builds the whole card from every event kept for the widget's source. It runs when the page loads, and again whenever a `replace` widget needs rebuilding. `Widget.value(event, field)` reads a field as a number, or `None` if the event doesn't carry one or it isn't numeric.
-
-```python
-    def render(self, events):
-        value = self.value(events[-1], self.y) if events else None
-        return {"value": value}
-```
-
-`update(event)` builds a single incremental change, and only matters for `op = "append"` widgets. Gauge replaces the whole card, so it doesn't need one. Look at [LineChart][dachshund.LineChart]'s source for what an `append` widget's `update()` looks like.
-
-## Persisting it
-
-Right now Gauge only knows what `events` it's handed, which is the recent, windowed history. To let it keep its own state across a restart, the way [BarChart][dachshund.BarChart]'s `persist` does, subclass [PersistableWidget][dachshund.PersistableWidget] instead of `Widget` and implement its three hooks:
-
-```python
-from dachshund import PersistableWidget
-
-
-@dataclass
-class Gauge(PersistableWidget):
-    ...
-
-    last: float | None = field(default=None, init=False, repr=False, compare=False)
-
-    def accumulate(self, event):
-        value = self.value(event, self.y)
-        if value is not None:
-            self.last = value
-
-    def snapshot(self):
-        return {"last": self.last}
-
-    def restore(self, data):
-        self.last = data.get("last")
-```
-
-All three are required; a subclass missing one can't be built. Persisting is off by default: `persist` defaults to `False`, and the hooks are only called on a Gauge built with `persist=True`.
-
-`render()` reads `self.last` instead of `events` when persisting:
+`render(events)` gets every kept event of the widget's source and returns what the renderer draws. `self.value(event, field)` reads a field as a number, `None` when missing or not numeric.
 
 ```python
     def render(self, events):
-        value = self.last if self.persist else (self.value(events[-1], self.y) if events else None)
-        return {"value": value}
+        return {"value": self.value(events[-1], self.y) if events else None}
 ```
 
-This needs a `Storage` configured on the dashboard, the same as any persisting widget:
+#### 3- Draw it in the browser
 
-```python
-from dachshund.storage.sqlite import SQLiteStorage
-
-dachshund.init(storage=SQLiteStorage("widget_state.db"))
-dachshund.widget("cpu", type="gauge", persist=True)
-```
-
-When it's naturally one entry per string key instead of a single value, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] rather than writing the three hooks yourself; `Table` and `BarChart` both do.
-
-## Using it
-
-Once the module defining `Gauge` has been imported, it's usable like any built-in widget:
-
-```python
-import dachshund
-
-dachshund.widget("cpu", type="gauge")
-dachshund.emit("cpu", value=42)
-```
-
-## Drawing it in the browser
-
-The Python side builds the payload. Drawing it is the client's job, and it lives in `gauge.js`, next to `gauge.py`. `script` points at it; dachshund serves it, at a URL derived from `type`, and loads it before `dashboard.js` runs.
-
-A renderer registers itself with `window.Dachshund.widget(type, renderer)`, guaranteed to exist before any widget script runs. It needs `mount(card, payload)`, which draws the card the first time and returns whatever state it needs later, plus a `replace(state, payload)` or `append(state, point)` matching the widget's `op`:
+`script` is served with the page. It registers a renderer under the widget's `type`, with `mount(card, payload)` for the first draw and `replace(state, payload)` or `append(state, point)` to match `op`.
 
 ```js
 // gauge.js
@@ -126,10 +60,64 @@ A renderer registers itself with `window.Dachshund.widget(type, renderer)`, guar
 })();
 ```
 
-Every card gets a `.card-content` div, whatever its type; it carries no styling beyond spacing, so a widget wanting a fixed size or its own layout adds that itself. `style: ClassVar[Path]` ships CSS the same way `script` ships JS:
+`mount` returns whatever state the later calls need. A `style` class attribute ships a stylesheet the same way:
 
 ```python
     style: ClassVar[Path] = Path(__file__).parent / "gauge.css"
 ```
 
-The built-in chart types use this same mechanism, registered from `dachshund/widgets/chart/charts.js`, a good second example to read.
+#### 4- Add it
+
+```python
+import dachshund
+from gauge import Gauge
+
+dachshund.add(Gauge("cpu"))
+dachshund.emit("cpu", value=42)
+```
+
+The built-in charts, in `dachshund/widgets/chart/`, make a good second example.
+
+## Persisting
+
+To keep a widget's state across restarts, subclass [PersistableWidget][dachshund.PersistableWidget] and write its three hooks. They're only called on a widget built with `persist=True`.
+
+```python
+from dataclasses import field
+
+from dachshund import PersistableWidget
+
+
+@dataclass
+class Gauge(PersistableWidget):
+    ...
+
+    last: float | None = field(default=None, init=False, repr=False, compare=False)
+
+    def accumulate(self, event):
+        value = self.value(event, self.y)
+        if value is not None:
+            self.last = value
+
+    def snapshot(self):
+        return {"last": self.last}
+
+    def restore(self, data):
+        self.last = data.get("last")
+
+    def render(self, events):
+        if self.persist:
+            return {"value": self.last}
+        return {"value": self.value(events[-1], self.y) if events else None}
+```
+
+The dashboard needs a `storage`, see [Persistent Storage](persistent-storage.md):
+
+```python
+from dachshund.storage.sqlite import SQLiteStorage
+
+dachshund.init(storage=SQLiteStorage("widget_state.db"))
+dachshund.add(Gauge("cpu", persist=True))
+```
+
+For state with one entry per key, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] instead. It provides the three hooks.

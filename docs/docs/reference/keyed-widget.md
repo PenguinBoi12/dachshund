@@ -1,6 +1,6 @@
 # Keyed Widget
 
-`KeyedWidget` is the base for a widget whose persisted state is one entry per string key, a row, a category, a count per user. `Table` and `BarChart` are both built on it. It's a [PersistableWidget][dachshund.PersistableWidget] that gives you `state`, `snapshot`, `restore`, and `sweep`; only `accumulate()` and `render()` are still yours to write, reading and writing `self.state.entries`.
+`KeyedWidget` is the base class of a widget whose state is one entry per key, like `Table` and `BarChart`.
 
 ```python
 from dachshund.widgets.state import KeyedWidget
@@ -11,7 +11,5 @@ class Leaderboard(KeyedWidget):
     def accumulate(self, event):
         self.state.upsert(event.payload["user"], event.payload["score"])
 ```
-
-A widget whose state isn't naturally keyed by string, a single value rather than a dict of entries, subclasses [PersistableWidget][dachshund.PersistableWidget] directly instead. See the [Custom Widgets](../guides/custom-widgets.md) guide.
 
 ::: dachshund.widgets.state.KeyedWidget

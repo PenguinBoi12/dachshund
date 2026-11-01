@@ -1,14 +1,13 @@
 # Text
 
-`Text` shows the latest markdown from its source, rendered to sanitized HTML: headings, bold/italic, lists, blockquotes, code, and links.
+`Text` shows the latest markdown of its source.
 
 ```python
 import dachshund
+from dachshund import Text
 
-dachshund.widget("changelog", type="text", title="Release Notes")
-dachshund.emit("changelog", value="**v1.2** fixed the thing. See [notes](https://example.com).")
+dachshund.add(Text("changelog", title="Release Notes"))
+dachshund.emit("changelog", value="**v1.2** fixed the thing.")
 ```
-
-Rendered output is sanitized (`markdown-it-py` + `nh3`): raw HTML tags in the source are escaped rather than passed through, and only `http`/`https`/`mailto` links are kept.
 
 ::: dachshund.widgets.text.text.Text

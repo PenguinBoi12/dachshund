@@ -1,11 +1,12 @@
 # Line Chart
 
-`LineChart` draws one value against another, both read from the event. `x` places a point along the axis and `y` is the field drawn.
+`LineChart` draws one field of its events against another.
 
 ```python
 import dachshund
+from dachshund import LineChart
 
-dachshund.chart("throughput", type="line", x="requests", y="latency")
+dachshund.add(LineChart("throughput", x="requests", y="latency"))
 dachshund.emit("throughput", requests=120, latency=96)
 ```
 

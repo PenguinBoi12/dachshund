@@ -71,10 +71,12 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guides:
+      - Pages: guides/pages.md
       - Custom Widgets: guides/custom-widgets.md
       - Persistent Storage: guides/persistent-storage.md
   - Reference:
       - Dashboard: reference/dashboard.md
+      - Page: reference/page.md
       - Widget: reference/widget.md
       - Persistable Widget: reference/persistable-widget.md
       - Keyed Widget: reference/keyed-widget.md
