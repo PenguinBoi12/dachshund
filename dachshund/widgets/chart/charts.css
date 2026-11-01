@@ -1,7 +1,13 @@
 .card-content.chart {
   display: block;
   position: relative;
-  height: 180px;
+  flex: 1 1 0;
+  min-height: 180px;
+}
+
+.card-content.chart > .uplot {
+  position: absolute;
+  inset: 0;
 }
 
 .chart-ranges {
