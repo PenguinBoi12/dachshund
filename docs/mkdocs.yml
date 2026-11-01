@@ -74,6 +74,7 @@ nav:
       - Pages: guides/pages.md
       - Custom Widgets: guides/custom-widgets.md
       - Persistent Storage: guides/persistent-storage.md
+      - Bigger Dashboard: guides/bigger-dashboard.md
   - Reference:
       - Dashboard: reference/dashboard.md
       - Page: reference/page.md

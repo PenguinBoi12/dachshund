@@ -32,18 +32,18 @@ A handler can be sync or async. A sync handler runs in a thread, so it can block
 `ctx` is the `context` given to `dachshund.init()`. Put whatever a handler needs from your application in it.
 
 ```python
-dachshund.init("Ada", context={"bot": bot})
+dachshund.init("My service", context={"db": db})
 
-@dachshund.action("greet")
-async def greet(ctx, channel_id: str) -> None:
-    await ctx["bot"].get_channel(int(channel_id)).send("Hello!")
+@dachshund.action("deactivate")
+async def deactivate(ctx, user_id: str) -> None:
+    await ctx["db"].deactivate_user(int(user_id))
 ```
 
 `ctx` defaults to `{}`. Calling `init()` again merges the new `context` into it.
 
 ## Event loop
 
-When `init()` is called from a running event loop, async handlers run on that loop. A bot's client, bound to its own loop, can then be awaited from a handler. Called from sync code, handlers run on dachshund's own loop.
+When `init()` is called from a running event loop, async handlers run on that loop. A client bound to your application's loop, such as a database pool, can then be awaited from a handler. Called from sync code, handlers run on dachshund's own loop.
 
 ## Result
 

@@ -57,10 +57,10 @@ class Table(KeyedWidget):
 
     ```python
     @dachshund.action("ban", label="Ban", confirm=True)
-    def ban(ctx, user: str, guild_id: str) -> None: ...
+    def ban(ctx, user: str, team_id: str) -> None: ...
 
     dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
-    dachshund.emit("sessions", user="ada", _guild_id="1349086642446532639")
+    dachshund.emit("sessions", user="ada", _team_id="42")
     ```
 
     A truthy `_delete` field removes the row with that key.
