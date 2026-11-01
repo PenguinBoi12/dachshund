@@ -79,7 +79,7 @@ class EventStore:
         self.retention = retention
         self.bucket = bucket
         self.compact_interval = compact_interval
-        self._last_compact = 0.0
+        self._last_compact = float("-inf")
         self._closed = False
 
     def close(self) -> None:

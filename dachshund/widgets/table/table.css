@@ -52,6 +52,7 @@
   border-radius: var(--radius-control);
   padding: 3px 9px;
   cursor: pointer;
+  transition: border-color 0.3s, color 0.3s;
 }
 
 .table-row-actions button:hover {

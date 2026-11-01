@@ -297,6 +297,7 @@ body {
   border-radius: var(--radius-control);
   padding: 5px 11px;
   cursor: pointer;
+  transition: border-color 0.3s, color 0.3s;
 }
 
 .card-actions button:hover {
@@ -311,6 +312,39 @@ body {
 .card-actions button.action-error {
   border-color: var(--offline);
   color: var(--offline);
+}
+
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 40px));
+}
+
+.toast {
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--offline);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.toast strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.toast p {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {

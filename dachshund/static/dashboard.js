@@ -2,6 +2,8 @@
   "use strict";
 
   const RECONNECT_DELAY = 2000;
+  const FLASH_DURATION = 2000;
+  const TOAST_DURATION = 6000;
 
   const mount = () => {
     const renderers = window.Dachshund.renderers;
@@ -51,6 +53,30 @@
     });
   };
 
+  const toast = (title, message) => {
+    let stack = document.querySelector(".toasts");
+
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.className = "toasts";
+      stack.setAttribute("role", "status");
+      document.body.appendChild(stack);
+    }
+
+    const item = document.createElement("div");
+    const heading = document.createElement("strong");
+    const body = document.createElement("p");
+
+    item.className = "toast toast-error";
+    heading.textContent = title;
+    body.textContent = message;
+    item.append(heading, body);
+    item.addEventListener("click", () => item.remove());
+    stack.appendChild(item);
+
+    setTimeout(() => item.remove(), TOAST_DURATION);
+  };
+
   const runAction = async (button) => {
     if (button.dataset.confirm === "true" && !confirm(`Run "${button.textContent}"?`)) {
       return;
@@ -58,6 +84,7 @@
 
     const args = button.dataset.args ? JSON.parse(button.dataset.args) : {};
     let ok = false;
+    let error = "The dashboard couldn't be reached.";
 
     try {
       const response = await fetch(`/_actions/${button.dataset.action}`, {
@@ -65,13 +92,26 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ args }),
       });
-      ok = (await response.json()).ok;
+      const result = await response.json();
+
+      ok = result.ok;
+      error = result.error ?? `Request failed (${response.status}).`;
     } catch {
       ok = false;
     }
 
     button.classList.remove("action-ok", "action-error");
     button.classList.add(ok ? "action-ok" : "action-error");
+
+    clearTimeout(button.flashTimer);
+    button.flashTimer = setTimeout(
+      () => button.classList.remove("action-ok", "action-error"),
+      FLASH_DURATION,
+    );
+
+    if (!ok) {
+      toast(`${button.textContent.trim()} failed`, error);
+    }
   };
 
   document.addEventListener("click", (event) => {
