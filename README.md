@@ -3,6 +3,8 @@
 
 > **Beta.** Dachshund works, but its API may still change between releases. Pin a version before depending on it.
 
+![A dachshund dashboard showing a worker's jobs](docs/docs/img/dashboard.png)
+
 ## What is Dachshund
 Dachshund runs as a thread inside your web app, bot, worker or daemon. There's no router to hook into and no extra service to deploy. Declare pages and widgets in code, emit events from anywhere, and the dashboard updates live over WebSocket.
 

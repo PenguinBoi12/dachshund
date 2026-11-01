@@ -71,17 +71,22 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guides:
+      - Running with Your App: guides/running.md
       - Pages: guides/pages.md
+      - Emitting Events: guides/emitting.md
+      - Choosing a Widget: guides/widgets.md
+      - Actions: reference/actions.md
+      - Bigger Dashboard: guides/bigger-dashboard.md
       - Custom Widgets: guides/custom-widgets.md
       - Persistent Storage: guides/persistent-storage.md
-      - Bigger Dashboard: guides/bigger-dashboard.md
+      - Testing: guides/testing.md
+      - Troubleshooting: guides/troubleshooting.md
   - Reference:
       - Dashboard: reference/dashboard.md
       - Page: reference/page.md
       - Widget: reference/widget.md
       - Persistable Widget: reference/persistable-widget.md
       - Keyed Widget: reference/keyed-widget.md
-      - Actions: reference/actions.md
       - Time Series Chart: reference/timeseries-chart.md
       - Line Chart: reference/line-chart.md
       - Bar Chart: reference/bar-chart.md

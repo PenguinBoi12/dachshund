@@ -1,6 +1,8 @@
 # Dachshund
 > *A live admin dashboard for any Python service, embedded in the process itself.*
 
+![A dachshund dashboard showing a worker's jobs](img/dashboard.png)
+
 Dachshund runs as a thread inside your web app, bot, worker or daemon. There's no router to hook into and no extra service to deploy. Declare pages and widgets in code, emit events from anywhere, and the dashboard updates live over WebSocket.
 
 - **Embedded**: starts with your process, nothing else to run
@@ -70,4 +72,4 @@ dachshund.init("My service", host="0.0.0.0", port=1212)
 
 A reverse proxy must allow WebSocket upgrades on `/_ws`, which carries the live updates.
 
-Head to the [Pages](guides/pages.md) guide next, or browse the reference for every widget.
+Head to [Running with Your App](guides/running.md) and the [Pages](guides/pages.md) guide next.
