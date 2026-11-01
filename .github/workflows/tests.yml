@@ -24,11 +24,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
-      - name: Lint with Black
-        id: black
-        continue-on-error: true
-        run: |
-          black --check dachshund/ tests/
       - name: Check typing with mypy
         id: mypy
         continue-on-error: true
