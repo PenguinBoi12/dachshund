@@ -3,11 +3,11 @@ from typing import Any, Protocol
 
 
 class Storage(Protocol):
-    """Wherever a widget's persisted state lives.
+    """Where persisted widget state is saved.
 
-    Deliberately dumb: a key to a JSON-shaped value, nothing to query, no
-    increment. That's what makes a backend easy to write, SQLite, Redis, a
-    flat file, anything that can get and set a key qualifies.
+    A backend maps a key to a JSON-shaped dict, through two async methods:
+    `save(key, value)` and `load(key)`, which returns `None` for an unknown
+    key. See the [Persistent Storage](../guides/persistent-storage.md) guide.
 
     ## Example
 
@@ -28,12 +28,11 @@ class Storage(Protocol):
 
 
 class SyncStorage:
-    """A `Storage` for a backend whose save/load are plain synchronous calls.
+    """A `Storage` for a backend with synchronous calls, such as an ORM.
 
-    Subclass and implement `_save`/`_load`; `asyncio.to_thread` runs each
-    off the event loop. Good for a backend that's safe to call from any
-    thread, an ORM session, a synchronous driver. `SQLiteStorage` pins its
-    connection to one thread instead, so it doesn't use this.
+    Subclass and write `_save(key, value)` and `_load(key)`. Each call runs in
+    a thread, off the event loop, so the backend must be safe to call from any
+    thread.
 
     ## Example
 
@@ -44,11 +43,9 @@ class SyncStorage:
         def __init__(self, path: str) -> None:
             self.path = path
 
-        def _save(self, key, value):
-            ...
+        def _save(self, key, value): ...
 
-        def _load(self, key):
-            ...
+        def _load(self, key): ...
     ```
     """
 

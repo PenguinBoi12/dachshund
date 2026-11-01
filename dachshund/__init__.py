@@ -8,18 +8,19 @@ except PackageNotFoundError:
     from dachshund._version import version as __version__
 
 from dachshund.actions import Action, Context
-from dachshund.layout import Page
+from dachshund.layout import Column, Page, Row
 from dachshund.registry import (
     Dashboard,
+    action,
+    add,
+    column,
     default,
     emit,
-    chart,
+    include,
     init,
     page,
     row,
     shutdown,
-    widget,
-    action,
 )
 from dachshund.runtime.boot import Runtime
 from dachshund.storage.events import Event
@@ -37,6 +38,7 @@ __all__ = [
     "Action",
     "BarChart",
     "Button",
+    "Column",
     "Context",
     "Dashboard",
     "Event",
@@ -44,18 +46,20 @@ __all__ = [
     "Number",
     "Page",
     "PersistableWidget",
+    "Row",
     "Runtime",
     "Table",
     "Text",
     "TimeSeriesChart",
     "Widget",
     "action",
-    "chart",
+    "add",
+    "column",
     "default",
     "emit",
+    "include",
     "init",
     "page",
     "row",
     "shutdown",
-    "widget",
 ]

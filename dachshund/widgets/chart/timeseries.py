@@ -7,31 +7,21 @@ from dachshund.widgets.chart.line import LineChart
 
 @dataclass
 class TimeSeriesChart(LineChart):
-    """A line drawn over time, a point per event.
-
-    `y` names the field drawn, or several fields for several lines. There is
-    no `x` to give: a point sits where its event happened.
+    """A line over time, one point per event.
 
     ## Example
 
     ```python
-    dachshund.chart("requests", type="timeseries")
-    dachshund.emit("requests", value=1)
+    dachshund.add(TimeSeriesChart("latency", y=["p50", "p95"]))
+    dachshund.emit("latency", p50=10, p95=40)
     ```
 
-    Plotting a reading rather than counting events:
+    ## Options
 
-    ```python
-    dachshund.chart("latency", type="timeseries", title="Response time", size=2)
-    dachshund.emit("latency", value=96)
-    ```
+    - `y` (`str | list[str]`) - The field drawn, or one line per field.
+      Defaults to `"value"`.
 
-    A line per field:
-
-    ```python
-    dachshund.chart("send_latency", type="timeseries", y=["p50", "p95", "p99"])
-    dachshund.emit("send_latency", p50=10, p95=40, p99=99)
-    ```
+    A point's x is the time its event was emitted, so there's no `x` option.
     """
 
     _: KW_ONLY

@@ -8,8 +8,6 @@ from dachshund.actions import Context
 from dachshund.storage.events import Event
 from dachshund.widgets.value import numeric
 
-MAX_SIZE = 3
-
 logger = logging.getLogger("dachshund")
 
 WIDGETS: dict[str, "type[Widget]"] = {}
@@ -17,32 +15,11 @@ WIDGETS: dict[str, "type[Widget]"] = {}
 
 @dataclass
 class Widget:
-    """A card on the dashboard, fed by an event source.
+    """A card on the dashboard, built from the events of its source.
 
-    A widget turns events into whatever its renderer draws. `render` builds the
-    whole card, from every event kept for its source. `update` builds a single
-    incremental change, and `op` tells the client how to apply it.
-
-    A widget type that can keep its state across a restart subclasses
-    [PersistableWidget][dachshund.PersistableWidget] instead.
-
-    Subclasses pair with a renderer registered under the same `type` in the
-    client's dispatch table. Set `script` (and optionally `style`) to a file
-    next to the subclass's own module and dachshund serves and loads it
-    automatically. The three built-in chart types work this way too; see
-    `LineChart`/`BarChart`.
-
-    `actions` names the actions a card's buttons invoke. `action_args`
-    supplies static arguments by action name, e.g. `action_args={"ban":
-    {"user_id": "42"}}`. Set `renders_own_actions` when a widget places its
-    own buttons instead of the generic card-level row; `Table` does this,
-    merging `action_args` with each row's own fields.
-
-    `rollup_safe` opts a widget's source into `EventStore.compact`'s numeric
-    averaging past `retention`; see there for why it defaults to `False`.
-
-    `paginated` marks a widget whose rows are fetched a page at a time
-    through `page()` instead of sent whole; `Table` is the built-in example.
+    Every built-in widget subclasses it. A subclass with a `type` of its own is
+    registered when the class is defined. See the
+    [Custom Widgets](../guides/custom-widgets.md) guide.
 
     ## Example
 
@@ -50,16 +27,44 @@ class Widget:
     class Gauge(Widget):
         type: ClassVar[str] = "gauge"
         script: ClassVar[Path] = Path(__file__).parent / "gauge.js"
+
+        def render(self, events):
+            return {"value": self.value(events[-1], "value") if events else None}
     ```
+
+    ## Options
+
+    - `name` (`str`) - The widget's unique name. Required.
+    - `source` (`str`) - The events it's built from. Defaults to `name`.
+    - `title` (`str`) - The card's title. Defaults to `name`, underscores as
+      spaces.
+    - `actions` (`list[str]`) - The actions shown as buttons on the card, see
+      [Actions](../reference/actions.md). Defaults to `[]`.
+    - `action_args` (`dict[str, dict]`) - The arguments each action is called
+      with, by action name. Defaults to `{}`.
+
+    ## Class attributes
+
+    - `type` (`str`) - The renderer drawing the card in the browser.
+    - `op` (`str`) - How the browser applies an `update()`: `"replace"`
+      redraws the card, `"append"` adds a point. Defaults to `"replace"`.
+    - `script` (`Path`) - The renderer's JavaScript file, served and loaded
+      with the page. Defaults to `None`.
+    - `style` (`Path`) - A stylesheet for the renderer. Defaults to `None`.
+    - `renders_own_actions` (`bool`) - The renderer places action buttons
+      itself, like `Table` does per row. Defaults to `False`.
+    - `paginated` (`bool`) - Rows are fetched a page at a time through
+      `page()`. Defaults to `False`.
+    - `rollup_safe` (`bool`) - Old events of the source may be averaged
+      together, see `EventStore.compact`. Defaults to `False`.
     """
 
     name: str
 
     _: KW_ONLY
 
-    source: str
+    source: str = ""
     title: str | None = None
-    size: int = 1
     actions: list[str] = field(default_factory=list)
     action_args: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -96,8 +101,8 @@ class Widget:
             WIDGETS[cls.type] = cls
 
     def __post_init__(self) -> None:
-        if not 1 <= self.size <= MAX_SIZE:
-            raise ValueError(f"A widget spans 1 to {MAX_SIZE} columns.")
+        if not self.source:
+            self.source = self.name
 
     def warn(self, field: str, value: Any) -> None:
         """Say a field could not be read, once, however often it arrives."""
@@ -157,28 +162,3 @@ class Widget:
     def update(self, event: Event) -> dict[str, Any] | None:
         """Build the change a single new event makes, if it makes one."""
         raise NotImplementedError
-
-
-def build(name: str, *, type: str = "line", **options: Any) -> Widget:
-    """Build a widget of a registered type.
-
-    Without an explicit source, the widget's own name doubles as its source.
-
-    ## Example
-
-    ```python
-    build("latency", type="timeseries", size=2)
-    ```
-    """
-    if type not in WIDGETS:
-        known = ", ".join(sorted(WIDGETS))
-        raise ValueError(f"There is no {type!r} widget type. Known types: {known}.")
-
-    from dachshund.widgets.persistable import PersistableWidget
-
-    if options.get("persist") and not issubclass(WIDGETS[type], PersistableWidget):
-        raise TypeError(f"{type!r} widgets can't persist.")
-
-    options.setdefault("source", name)
-
-    return WIDGETS[type](name=name, **options)

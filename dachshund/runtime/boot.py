@@ -24,17 +24,13 @@ logger = logging.getLogger("dachshund")
 class Runtime:
     """The dashboard server, running inside the host process.
 
-    The runtime owns a background thread with its own asyncio event loop. It
-    never touches the host's loop (if it even has one), so it behaves the same
-    whether the host is a blocking WSGI application or an asyncio bot.
+    It runs on a background thread with its own event loop and never touches
+    the host's loop. Each `start()` builds a fresh application from the
+    factory.
 
-    It serves whatever application the factory builds, and calls the factory
-    again on every start so a stopped runtime can be started back up.
-
-    Under a multi-worker server, several `Runtime`s share one host:port.
-    Only one can bind it, so a taken port doesn't fail `start()`, it stands
-    by and keeps retrying in the background, that's how a dead winner gets
-    replaced without a restart. See `is_serving`.
+    Under a multi-worker server, only one worker can bind the port. The others
+    keep retrying in the background and take over if it stops, see
+    `is_serving`.
     """
 
     def __init__(

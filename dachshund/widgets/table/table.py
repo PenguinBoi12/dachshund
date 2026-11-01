@@ -22,74 +22,72 @@ def _fields(payload: dict[str, Any]) -> dict[str, Any]:
 
 @dataclass
 class Table(KeyedWidget):
-    """A row per kept event, `columns` naming which payload fields are shown.
-
-    `key` names a payload field identifying "the same row" across events: an
-    event whose `key` field matches an already-kept row replaces it in place
-    rather than appending a new one. Left unset, every kept event is its own
-    row.
-
-    A row is a snapshot, not a stream: the whole table is rebuilt from the
-    kept events on every change, the same way `BarChart` rebuilds its bars.
-
-    With `persist=True`, rows survive a restart. Needs `key` set and
-    `storage=...` configured on the dashboard. A truthy `_delete` field
-    removes a row instead of updating it:
-
-    ```python
-    from dachshund.storage.sqlite import SQLiteStorage
-
-    dachshund.init(storage=SQLiteStorage("widget_state.db"))
-    dachshund.widget(
-        "sessions", type="table", columns=["user", "ip"], key="user", persist=True
-    )
-    dachshund.emit("sessions", user="ada", ip="10.0.0.1")
-    dachshund.emit("sessions", user="ada", _delete=True)
-    ```
-
-    For a table backed by data dachshund doesn't own, `loader` fetches a
-    page directly instead: a function of `(ctx, cursor, page_size)`
-    returning `(rows, next_cursor)`, sync or async, called every time a
-    page is needed, `ctx` is the dashboard's own context, same as an
-    action handler's first argument. Mutually exclusive with `persist`, a
-    table is either self-contained or fully delegated:
-
-    ```python
-    def load_page(ctx, cursor, page_size):
-        query = ctx["db"].query(User)
-        if cursor is not None:
-            query = query.filter(User.id > int(cursor))
-        rows = query.order_by(User.id).limit(page_size).all()
-        next_cursor = str(rows[-1].id) if len(rows) == page_size else None
-        return [{"user": row.name, "ip": row.ip} for row in rows], next_cursor
-
-    dashboard.widget(
-        "sessions", type="table", columns=["user", "ip"], loader=load_page
-    )
-    ```
-
-    `actions` (see [Widget][dachshund.Widget]) render one button per row
-    instead of the generic card-level row, since an action here runs against
-    a particular row, not the card as a whole. A payload field emitted with a
-    leading `_` (`_guild_id`) is left off the rendered table, and reaches an
-    action's arguments under its name without the underscore (`guild_id`).
+    """A paginated table, one row per kept event.
 
     ## Example
 
     ```python
-    @dachshund.action("ban", label="Ban", confirm=True)
-    def ban_user(ctx: dachshund.Context, user: str, guild_id: int) -> None:
-        ...
-
-    dachshund.widget(
-        "sessions",
-        type="table",
-        columns=["user", "ip"],
-        key="user",
-        actions=["ban"],
-    )
-    dachshund.emit("sessions", user="ada", ip="10.0.0.1", _guild_id=1349086642446532639)
+    dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))
+    dachshund.emit("sessions", user="ada", ip="10.0.0.1")
     ```
+
+    ## Options
+
+    - `columns` (`list[str]`) - The payload fields shown, left to right.
+      Required.
+    - `key` (`str`) - The field identifying a row across events. An event
+      whose key matches a kept row replaces it. Defaults to `None`, every
+      event is a new row.
+    - `page_size` (`int`) - Rows per page. Defaults to `5`.
+    - `loader` (`Loader`) - Fetches rows from data dachshund doesn't own,
+      see [Loader](#loader). Defaults to `None`.
+    - `persist` (`bool`) - Keeps rows across restarts. Needs `key` and the
+      dashboard's `storage`. Can't be combined with `loader`. Defaults to
+      `False`.
+    - `actions` (`list[str]`) - Actions shown as a button on every row.
+      Defaults to `[]`.
+
+    `source`, `title` and `action_args` are common to every widget, see
+    [Widget][dachshund.Widget].
+
+    ## Row fields
+
+    A field starting with `_` is hidden from the table and passed to the
+    row's actions without the underscore:
+
+    ```python
+    @dachshund.action("ban", label="Ban", confirm=True)
+    def ban(ctx, user: str, guild_id: str) -> None: ...
+
+    dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
+    dachshund.emit("sessions", user="ada", _guild_id="1349086642446532639")
+    ```
+
+    A truthy `_delete` field removes the row with that key.
+
+    ## Loader
+
+    A function of `(ctx, cursor, page_size)`, sync or async, returning
+    `(rows, next_cursor)`. `cursor` is `None` for the first page and
+    `next_cursor` is `None` on the last one. It's called every time a page
+    is shown.
+
+    ```python
+    def load_users(ctx, cursor, page_size):
+        start = int(cursor or 0)
+        rows = ctx["db"].users(offset=start, limit=page_size)
+        more = len(rows) == page_size
+        return rows, str(start + page_size) if more else None
+
+    dachshund.add(Table("users", columns=["name", "email"], loader=load_users))
+    ```
+
+    ## Pagination
+
+    Pages move forward by cursor. A kept table's cursor is the last row's
+    key, or its position without one, and falls back to the first page if
+    that row is gone. With `persist=True`, the cursor is the row's insertion
+    order, which stays valid through any update or removal.
     """
 
     _: KW_ONLY

@@ -8,29 +8,21 @@ from dachshund.widgets.persistable import PersistableWidget
 
 @dataclass
 class Number(PersistableWidget):
-    """The latest number from its source, big.
-
-    `y` names the field read and defaults to `value`. `unit` is shown next to
-    the number, unscaled, e.g. `"ms"` or `"%"`.
+    """The latest number of its source, shown big.
 
     ## Example
 
     ```python
-    dachshund.chart("cpu", type="number", title="CPU Load", unit="%")
+    dachshund.add(Number("cpu", title="CPU Load", unit="%"))
     dachshund.emit("cpu", value=42)
     ```
 
-    With `persist=True`, the reading survives a restart instead of only
-    covering whatever's still kept in the event log. This needs
-    `storage=...` configured on the dashboard first, there's no default.
+    ## Options
 
-    ```python
-    from dachshund.storage.sqlite import SQLiteStorage
-
-    dachshund.init(storage=SQLiteStorage("widget_state.db"))
-    dachshund.widget("cpu", type="number", unit="%", persist=True)
-    dachshund.emit("cpu", value=42)
-    ```
+    - `y` (`str`) - The field read. Defaults to `"value"`.
+    - `unit` (`str`) - Shown next to the number, as is. Defaults to `None`.
+    - `persist` (`bool`) - Keeps the latest number across restarts. Needs the
+      dashboard's `storage`. Defaults to `False`.
     """
 
     _: KW_ONLY

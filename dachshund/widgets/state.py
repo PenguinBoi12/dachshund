@@ -58,11 +58,21 @@ class KeyedState:
 
 @dataclass
 class KeyedWidget(PersistableWidget):
-    """A `PersistableWidget` whose persisted state is a `KeyedState`.
+    """A `PersistableWidget` whose state is one entry per key.
 
-    Provides `state`, `snapshot`, `restore`, and `sweep`. A subclass adds its
-    own `accumulate()` and reads `self.state.entries` in `render()`, same as
-    `Table`/`BarChart` do.
+    `snapshot()`, `restore()` and `sweep()` are provided. A subclass writes
+    `accumulate()` and reads `self.state.entries` in `render()`. `Table` and
+    `BarChart` are built this way.
+
+    ## Example
+
+    ```python
+    class Leaderboard(KeyedWidget):
+        type = "leaderboard"
+
+        def accumulate(self, event):
+            self.state.upsert(event.payload["user"], event.payload["score"])
+    ```
     """
 
     _: KW_ONLY
@@ -80,9 +90,19 @@ class KeyedWidget(PersistableWidget):
         self.state.restore(data)
 
     def sweep(self, before: float) -> None:
-        """Drop any persisted entry not touched since `before` (a `time.time()` value).
+        """Remove every entry not seen since `before`, a `time.time()` value.
 
-        For resyncing after downtime: re-emit every currently-known entry
-        (as already normal), then call this to drop whatever wasn't touched.
+        To resync after downtime, emit every current entry again, then sweep.
+
+        ## Example
+
+        ```python
+        started = time.time()
+
+        for user in current_users():
+            dachshund.emit("sessions", user=user.name, ip=user.ip)
+
+        sessions.sweep(before=started)
+        ```
         """
         self.state.sweep(before)

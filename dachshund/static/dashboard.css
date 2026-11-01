@@ -163,15 +163,78 @@ body {
   border-color: var(--border);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 14px;
+.content {
+  margin-top: 28px;
 }
 
-.grid:first-of-type {
-  margin-top: 28px;
+.content.tabbed {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tabs {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border);
+}
+
+.tabs a {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 7px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.tabs a:hover {
+  background: var(--hover);
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--text);
+  background: var(--selected);
+  border-left-color: var(--text);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.row > .card,
+.row > .column {
+  flex: var(--weight, 1) 1 0;
+  min-width: min(280px, 100%);
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 14px;
 }
 
 .colophon {
@@ -198,9 +261,6 @@ body {
   padding: 18px 20px;
 }
 
-.span-1 { grid-column: span 1; }
-.span-2 { grid-column: span 2; }
-.span-3 { grid-column: span 3; }
 
 .card-title {
   margin: 0;
@@ -266,11 +326,24 @@ body {
     padding-right: 20px;
   }
 
-  .grid {
+  .content.tabbed {
     grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
 
-  .card {
-    grid-column: span 1;
+  .tabs {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 0 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
+
+  .tabs a {
+    white-space: nowrap;
+    border-left: none;
+    border-radius: var(--radius-control);
+  }
+
 }

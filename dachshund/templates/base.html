@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}{{ name }}{% endblock %}</title>
+    <title>{% block title %}{{ name }}{% if heading %} - {{ heading }}{% endif %}{% endblock %}</title>
     <link rel="stylesheet" href="{{ static_url }}/uplot.min.css">
     <link rel="stylesheet" href="{{ static_url }}/dashboard.css">
     {% for url in widget_styles %}

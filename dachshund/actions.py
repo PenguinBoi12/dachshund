@@ -26,6 +26,26 @@ class Action:
     confirm: bool = False
 
 
+def make_action(
+    name: str,
+    handler: Callable[..., Any],
+    *,
+    label: str | None = None,
+    confirm: bool = False,
+) -> Action:
+    """Wrap `handler` as an action, checking it takes `ctx` first."""
+    parameters = list(inspect.signature(handler).parameters)
+
+    if not parameters or parameters[0] != "ctx":
+        raise TypeError(
+            f"{handler.__name__!r} must take `ctx` as its first "
+            "parameter, every action handler receives the "
+            "dashboard's context there."
+        )
+
+    return Action(name, handler, label=label, confirm=confirm)
+
+
 def bind_args(handler: Callable[..., Any], args: dict[str, Any]) -> dict[str, Any]:
     """Filter `args` down to `handler`'s own parameters and validate them.
 

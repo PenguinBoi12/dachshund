@@ -8,14 +8,13 @@ from dachshund.widgets.base import Widget
 
 @dataclass
 class PersistableWidget(Widget, ABC):
-    """A `Widget` that can keep its state across a restart, if asked to.
+    """A `Widget` whose state can be kept across restarts.
 
-    Off by default: built without `persist=True`, it behaves like any other
-    `Widget` and none of the hooks below are called. With `persist=True`, its
-    state is saved to the dashboard's `Storage` and `render()` reads that
-    state instead of the kept events.
+    With `persist=True`, every event goes through `accumulate()`, the state from
+    `snapshot()` is saved to the dashboard's `storage`, and `restore()` seeds it
+    on start. Without it, none of the three is called.
 
-    For state that's one entry per string key, subclass
+    For state with one entry per key, subclass
     [KeyedWidget][dachshund.widgets.state.KeyedWidget] instead.
 
     ## Example
@@ -36,6 +35,11 @@ class PersistableWidget(Widget, ABC):
         def restore(self, data):
             self.last = data.get("last")
     ```
+
+    ## Options
+
+    - `persist` (`bool`) - Keeps the widget's state across restarts. Needs
+      the dashboard's `storage`. Defaults to `False`.
     """
 
     _: KW_ONLY

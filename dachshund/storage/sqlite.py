@@ -13,11 +13,7 @@ MIGRATIONS = ["""
 
 
 class SQLiteStorage:
-    """A `Storage` backed by its own SQLite file.
-
-    Self-contained: give it a path and it owns its own connection and
-    single-worker executor, entirely separate from whatever database a
-    dashboard's raw events live in.
+    """A `Storage` in a SQLite file of its own.
 
     ## Example
 
@@ -27,6 +23,10 @@ class SQLiteStorage:
 
     dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
     ```
+
+    ## Options
+
+    - `path` (`str`) - The SQLite file, created if missing. Required.
     """
 
     def __init__(self, path: str) -> None:
@@ -34,11 +34,9 @@ class SQLiteStorage:
         self._closed = False
 
     def close(self) -> None:
-        """Close the connection and stop the executor backing it.
+        """Close the file. Calling it again does nothing.
 
-        Dashboard never calls this on its own, a `Storage` you built is
-        yours to close when you're done with it. Safe to call more than
-        once, later calls are a no-op.
+        The dashboard never closes a storage, close it when you're done with it.
         """
         if self._closed:
             return

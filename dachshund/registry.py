@@ -1,23 +1,30 @@
 import asyncio
 import atexit
-import inspect
 import logging
 import queue
 import threading
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterable
 
 from aiohttp import web
 
-from dachshund.actions import Action, Context
-from dachshund.layout import DEFAULT_PAGE, Page
+from dachshund.actions import Action, Context, make_action
+from dachshund.layout import (
+    DEFAULT_PAGE,
+    Column,
+    Page,
+    Row,
+    W,
+    build_row,
+    names_of,
+    row_names,
+)
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
 from dachshund.storage.events import DEFAULT_PATH, Event, EventStore
 from dachshund.storage.protocol import Storage
-from dachshund.widgets import build
 from dachshund.widgets.base import Widget
 from dachshund.widgets.persistable import persisting
 
@@ -32,21 +39,34 @@ _lock = threading.RLock()
 
 
 class Dashboard:
-    """Everything one process puts on its dashboard.
+    """Everything one process shows on its dashboard: pages, widgets, actions,
+    and the server drawing them.
 
-    A dashboard describes the service it watches, holds the widgets drawn on
-    it, and owns the runtime serving them.
-
-    Most applications never build one directly, the module-level API works
-    with a default dashboard that `dachshund.init()` starts.
+    Most applications use the module-level API instead, which works on a
+    default dashboard started by `dachshund.init()`.
 
     ## Example
 
     ```python
     dashboard = Dashboard("Ada", description="Code Society's Matrix bot")
-    dashboard.chart("latency", type="timeseries")
+    dashboard.add(TimeSeriesChart("latency"))
     dashboard.start()
     ```
+
+    ## Options
+
+    - `name` (`str`) - Shown at the top of every page. Defaults to
+      `"Dashboard"`.
+    - `description` (`str`) - Shown under the name. Defaults to `None`.
+    - `host` (`str`) - The interface served on. Defaults to `"127.0.0.1"`,
+      `"0.0.0.0"` serves every interface.
+    - `port` (`int`) - The port served on. Defaults to `1212`.
+    - `path` (`str`) - The SQLite file keeping raw events. Defaults to
+      `"dachshund.db"`.
+    - `storage` (`Storage`) - Where persisted widget state is saved, see
+      [Storage](../reference/storage.md). Defaults to `None`.
+    - `context` (`dict`) - Passed as `ctx` to every action and table loader.
+      Defaults to `{}`.
     """
 
     def __init__(
@@ -71,6 +91,7 @@ class Dashboard:
         self.widgets: dict[str, Widget] = {}
         self.actions: dict[str, Action] = {}
         self.pages: dict[str, Page] = {}
+        self.placements: dict[str, str] = {}
         self.dropped = 0
         self._dropping = False
 
@@ -100,9 +121,8 @@ class Dashboard:
     def start(self) -> None:
         """Serve the dashboard.
 
-        Called from a running event loop, that loop is kept as `host_loop`
-        and async action handlers run there instead of on dachshund's own
-        loop. Called from sync code, `host_loop` stays unset.
+        Called from a running event loop, that loop becomes `host_loop` and async
+        action handlers run on it.
         """
         with suppress(RuntimeError):
             self.host_loop = asyncio.get_running_loop()
@@ -110,159 +130,81 @@ class Dashboard:
         self.runtime.start()
 
     def stop(self) -> None:
-        """Stop serving the dashboard.
-
-        The dashboard itself is untouched, `start()` again later picks up
-        right where it left off. For releasing it for good, see `close()`.
-        """
+        """Stop serving the dashboard. `start()` serves it again."""
         self.runtime.stop()
 
     def close(self) -> None:
-        """Stop serving and release the connection backing raw events.
+        """Stop serving and close the raw events file.
 
-        Unlike `stop()`, this dashboard can't be started again afterward.
-        A `storage=...` you configured is yours, this never closes it,
-        Dashboard didn't create it.
+        The dashboard can't be started again. `storage` is left open.
         """
         self.stop()
         self.events.close()
 
-    def add(self, widget: Widget) -> Widget:
-        """Add a widget on the dashboard.
+    def add(self, widget: W, *, page: str | None = None) -> W:
+        """Add a widget and return it.
 
         ## Example
 
         ```python
-        dashboard.add(TimeSeriesChart("latency", source="latency"))
+        latency = dashboard.add(TimeSeriesChart("latency"))
+        dashboard.add(Number("errors"), page="errors")
         ```
+
+        ## Options
+
+        - `page` (`str`) - The page it goes on, declared if new. Defaults to
+          `"default"`.
         """
         if widget.name in self.widgets:
             raise ValueError(f"A widget named {widget.name!r} already exists.")
 
-        if persisting(widget) and self.storage is None:
-            raise ValueError(
-                f"{widget.name!r} wants to persist, but no storage is "
-                "configured. Pass storage=... to Dashboard() or "
-                "dachshund.init()."
-            )
+        self._check_storage(widget)
+
+        target = self.page(page) if page is not None else None
+
+        if target is not None and target.tabs:
+            raise ValueError(f"Page {page!r} has tabs, add widgets to one.")
 
         self.widgets[widget.name] = widget
 
+        if page is not None:
+            self.placements[widget.name] = page
+
         return widget
-
-    def widget(self, name: str, *, type: str = "line", **options: Any) -> Widget:
-        """Add a widget of any registered type on the dashboard.
-
-        ## Example
-
-        ```python
-        dashboard.widget("latency", type="timeseries", size=2)
-        ```
-        """
-        return self.add(build(name, type=type, **options))
 
     def action(
         self, name: str, *, label: str | None = None, confirm: bool = False
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Register an action the dashboard's UI can invoke.
+        """Register an action, called from a button on the dashboard.
 
-        `handler`'s first parameter must be named `ctx`, it always receives
-        the dashboard's `context` there.
+        The handler's first parameter must be `ctx`, it receives the dashboard's
+        `context`. See [Actions](../reference/actions.md).
 
         ## Example
 
         ```python
         @dashboard.action("block_user", label="Block", confirm=True)
-        def block_user(ctx: Context, user_id: str) -> None:
-            ...
+        def block_user(ctx, user_id: str) -> None: ...
         ```
+
+        ## Options
+
+        - `name` (`str`) - The name widgets list in `actions`. Required.
+        - `label` (`str`) - The button's text. Defaults to `name`.
+        - `confirm` (`bool`) - Asks before running. Defaults to `False`.
         """
 
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
             if name in self.actions:
                 raise ValueError(f"An action named {name!r} already exists.")
 
-            parameters = list(inspect.signature(handler).parameters)
-
-            if not parameters or parameters[0] != "ctx":
-                raise TypeError(
-                    f"{handler.__name__!r} must take `ctx` as its first "
-                    "parameter, every action handler receives the "
-                    "dashboard's context there."
-                )
-
-            self.actions[name] = Action(name, handler, label=label, confirm=confirm)
+            self.actions[name] = make_action(
+                name, handler, label=label, confirm=confirm
+            )
             return handler
 
         return decorator
-
-    def chart(
-        self,
-        name: str,
-        *,
-        type: str = "line",
-        source: str | None = None,
-        x: str | None = None,
-        y: str | Sequence[str] = "value",
-        title: str | None = None,
-        size: int = 1,
-        persist: bool = False,
-    ) -> Widget:
-        """Add a chart on the dashboard.
-
-        The type decides what is drawn and how `x` and `y` are read:
-
-        - `timeseries`: [TimeSeriesChart][dachshund.TimeSeriesChart], a line
-          over the time each event was emitted.
-        - `line`: [LineChart][dachshund.LineChart], one value against
-          another.
-        - `bar`: [BarChart][dachshund.BarChart], a total per category.
-
-        `y` names the field drawn and defaults to `value`.
-
-        The source defaults to the chart's own name, so emitting under that
-        name is enough to feed it. `title` names the card and `size` is how
-        many of the three columns it spans.
-
-        `persist` is [BarChart][dachshund.BarChart]'s own opt-in, forwarded
-        here since `bar` is one of the types this method knows about: its
-        totals survive a restart instead of only covering the events
-        currently kept. It needs `storage=...` configured on the dashboard
-        first (see [Dashboard][dachshund.Dashboard]), nothing persists by
-        default. Persisting isn't bar-chart-specific though: any widget can
-        keep its own state the same way, see [Widget][dachshund.Widget].
-
-        ## Example
-
-        ```python
-        dashboard.chart("latency", type="timeseries", title="Response time", size=2)
-        dashboard.emit("latency", value=96)
-        ```
-
-        ```python
-        from dachshund.storage.sqlite import SQLiteStorage
-
-        dashboard = Dashboard(storage=SQLiteStorage("widget_state.db"))
-        dashboard.chart("commands", type="bar", x="name", persist=True)
-        dashboard.emit("commands", name="/ban", value=1)
-        ```
-        """
-        options: dict[str, Any] = {"y": y}
-
-        if x is not None:
-            options["x"] = x
-
-        if persist:
-            options["persist"] = True
-
-        return self.widget(
-            name,
-            type=type,
-            source=source or name,
-            title=title,
-            size=size,
-            **options,
-        )
 
     def emit(self, source: str, /, **fields: Any) -> None:
         """Emit an event on the dashboard.
@@ -313,88 +255,165 @@ class Dashboard:
         """The widgets watching `source`."""
         return [widget for widget in self.widgets.values() if widget.source == source]
 
+    def include(self, page: Page) -> Page:
+        """Put a page, with its tabs, widgets and actions, on the dashboard.
+
+        Nothing is added if a name is already taken. Including a page the dashboard
+        already holds does nothing. An included page can't be registered on.
+
+        ## Example
+
+        ```python
+        page = Page("errors", title="Errors")
+        page.add(BarChart("errors", x="code"))
+        dashboard.include(page)
+        ```
+        """
+        if page.parent is not None:
+            raise ValueError(f"{page.path!r} is a tab, include its page instead.")
+
+        if self.pages.get(page.path) is page:
+            return page
+
+        pages = page.every()
+        widgets = [name for each in pages for name in each.widgets]
+        actions = [name for each in pages for name in each.actions]
+
+        clashes = [each.path for each in pages if each.path in self.pages]
+        clashes += [name for name in widgets if name in self.widgets]
+        clashes += [name for name in actions if name in self.actions]
+        clashes += _repeated(widgets) + _repeated(actions)
+
+        if clashes:
+            raise ValueError(f"include() names already taken: {', '.join(clashes)}.")
+
+        for each in pages:
+            for widget in each.widgets.values():
+                self._check_storage(widget)
+
+        for each in pages:
+            self.pages[each.path] = each
+
+            for widget in each.widgets.values():
+                self.add(widget, page=each.path)
+
+            self.actions.update(each.actions)
+            each.included = True
+
+        return page
+
     def page(self, name: str, *, title: str | None = None) -> Page:
         """Declare a page, or retitle one already declared.
 
-        Never required: a dashboard that never calls this or `row()` puts
-        every widget on one implicit `"default"` page, as one row, in
-        registration order.
+        A dashboard that declares no page shows every widget on one `"default"`
+        page.
 
         ## Example
 
         ```python
         dashboard.page("errors", title="Errors")
         ```
+
+        ## Options
+
+        - `title` (`str`) - Shown in the navigation. Defaults to `name`,
+          underscores as spaces.
         """
         existing = self.pages.get(name)
 
         if existing is None:
-            existing = self.pages[name] = Page(name, title=title)
-        elif title is not None:
+            return self.include(Page(name, title=title))
+
+        if title is not None:
             existing.title = title
 
         return existing
 
-    def row(self, *names: str, page: str = DEFAULT_PAGE) -> None:
-        """Group already-registered widgets into one row of `page`.
+    def column(self, *widgets: Widget | str) -> Column:
+        """Stack widgets top to bottom, for use in a `row()`."""
+        return Column(self._known(names_of(widgets)))
 
-        Call after registering every widget named here, in the order
-        they should appear. A widget never named in any `row()` call
-        auto-appends, in registration order, as a trailing row of
-        `"default"`.
+    def row(
+        self,
+        *items: Widget | str | Column,
+        widths: Iterable[int] | None = None,
+        page: str = DEFAULT_PAGE,
+    ) -> None:
+        """Lay widgets out side by side, in a row of their own.
+
+        A widget on no page yet moves to `page`.
 
         ## Example
 
         ```python
-        dashboard.row("latency", "errors", page="requests")
+        dashboard.row(latency, dashboard.column(errors, users), widths=(2, 1))
         ```
-        """
-        unknown = [name for name in names if name not in self.widgets]
 
-        if unknown:
+        ## Options
+
+        - `widths` (`tuple[int, ...]`) - Each item's share of the row, see
+          [Row][dachshund.Row]. Defaults to equal shares.
+        - `page` (`str`) - The page the row goes on. Defaults to `"default"`.
+        """
+        row = build_row(items, widths)
+        names = self._known(row_names(row))
+        elsewhere = [name for name in names if self.widget_page(name, page) != page]
+
+        if elsewhere:
             raise ValueError(
-                f"row() names widgets that don't exist: {', '.join(unknown)}."
+                f"row() names widgets on another page: {', '.join(elsewhere)}."
             )
 
-        self.page(page).rows.append(list(names))
+        target = self.page(page)
 
-    def widget_page(self, name: str) -> str:
-        """The page a widget appears on, `"default"` if never placed by `row()`."""
-        for page in self.pages.values():
-            if any(name in row for row in page.rows):
-                return page.name
+        if target.tabs:
+            raise ValueError(f"Page {page!r} has tabs, add rows to one.")
 
-        return DEFAULT_PAGE
+        target.rows.append(row)
 
-    def layout(self, page: str = DEFAULT_PAGE) -> list[list[str]]:
-        """The rows of widget names making up `page`, in display order.
+        for name in names:
+            self.placements[name] = page
 
-        `page`'s own explicit rows come first. For `"default"`, every
-        widget not placed on any page by `row()` follows as one trailing
-        row, in registration order.
+    def widget_page(self, name: str, default: str = DEFAULT_PAGE) -> str:
+        """The page a widget appears on."""
+        return self.placements.get(name, default)
+
+    def layout(self, page: str = DEFAULT_PAGE) -> tuple[list[Row], list[str]]:
+        """`page`'s rows in display order, then the widgets in no row.
 
         ## Example
 
         ```python
         dashboard.layout("requests")
-        # [["latency", "errors"]]
+        # ([Row(["latency", Column(["errors", "users"])], (2, 1))], ["cpu"])
         ```
         """
-        rows = [list(row) for row in self.pages.get(page, Page(page)).rows]
+        declared = self.pages.get(page)
+        rows = list(declared.rows) if declared else []
+        placed = {name for row in rows for name in row_names(row)}
+        flow = [
+            name
+            for name in self.widgets
+            if name not in placed and self.widget_page(name) == page
+        ]
 
-        if page == DEFAULT_PAGE:
-            placed = {
-                name
-                for other in self.pages.values()
-                for row in other.rows
-                for name in row
-            }
-            leftover = [name for name in self.widgets if name not in placed]
+        return rows, flow
 
-            if leftover:
-                rows.append(leftover)
+    def _check_storage(self, widget: Widget) -> None:
+        if persisting(widget) and self.storage is None:
+            raise ValueError(
+                f"{widget.name!r} wants to persist, but no storage is "
+                "configured. Pass storage=... to Dashboard() or "
+                "dachshund.init()."
+            )
 
-        return rows
+    def _known(self, names: list[str]) -> list[str]:
+        unknown = [name for name in names if name not in self.widgets]
+
+        if unknown:
+            raise ValueError(f"No widgets named: {', '.join(unknown)}.")
+
+        return names
 
     def _create_app(self) -> web.Application:
         """Build the application that serves this dashboard."""
@@ -404,15 +423,10 @@ class Dashboard:
 
 
 def default(*, path: str = DEFAULT_PATH, storage: Storage | None = None) -> Dashboard:
-    """The dashboard the module-level API works with.
+    """The dashboard the module-level API works on, created on first use.
 
-    Built on first use so widgets and actions can be registered at import
-    time, long before `init()` starts. `path` is fixed at that first use,
-    its connection is opened right away and can't be re-pointed afterward.
-    `storage` isn't touched until a persisting widget is added though, so
-    whichever call supplies it first, however later, is the one that sticks:
-    an action or widget registered before `init()` runs doesn't lock
-    storage out for the `init()` call that follows it.
+    `path` only applies to that first call. `storage` applies to the first call
+    that gives one, which may come later.
     """
     global _dashboard
 
@@ -437,28 +451,21 @@ def init(
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
-    `name` and `description` appear at the top of the dashboard page. Leave
-    `name` unset and the dashboard falls back to a generic title; leave
-    `description` unset and none is shown. Widgets registered before this
-    call are kept.
-
-    `context` is merged into whatever the dashboard's `context` already
-    holds, reachable as `ctx` from every action handler, see
-    [Actions](../reference/actions.md).
+    Widgets, pages and actions registered before the call are kept. Called
+    again while running, it does nothing.
 
     ## Example
 
     ```python
     import dachshund
 
-    dachshund.init("Ada", description="Code Society's Matrix bot")
+    dachshund.init("Ada", description="Code Society's Matrix bot", context={"bot": bot})
     ```
 
-    Bind to all interfaces to expose the dashboard beyond the local machine:
+    ## Options
 
-    ```python
-    dachshund.init("Ada", host="0.0.0.0", port=1212)
-    ```
+    Takes the options of [Dashboard][dachshund.Dashboard]. `context` is merged
+    into the context already set.
     """
     dashboard = default(path=path, storage=storage)
 
@@ -515,10 +522,7 @@ def init(
 
 
 def shutdown() -> None:
-    """Stop the dashboard started by `init()`.
-
-    The widgets registered on it are kept, so it can be started again.
-    """
+    """Stop the dashboard started by `init()`. Its widgets are kept."""
     with _lock:
         if _dashboard is None:
             return
@@ -527,34 +531,37 @@ def shutdown() -> None:
         atexit.unregister(_dashboard.stop)
 
 
-def chart(name: str, **options: Any) -> Widget:
-    """Put a chart on the default dashboard.
+def add(widget: W, *, page: str | None = None) -> W:
+    """Add a widget, on the default dashboard.
 
-    Takes what [Dashboard.chart][dachshund.registry.Dashboard.chart] does.
-
-    ## Example
-
-    ```python
-    import dachshund
-
-    dachshund.chart("latency", type="timeseries", size=2)
-    ```
-    """
-    return default().chart(name, **options)
-
-
-def widget(name: str, *, type: str = "line", **options: Any) -> Widget:
-    """Put a widget of any registered type on the default dashboard.
+    Takes what [Dashboard.add][dachshund.registry.Dashboard.add] does.
 
     ## Example
 
     ```python
     import dachshund
 
-    dachshund.widget("latency", type="timeseries", size=2)
+    dachshund.add(dachshund.TimeSeriesChart("latency"))
     ```
     """
-    return default().widget(name, type=type, **options)
+    return default().add(widget, page=page)
+
+
+def include(page: Page) -> Page:
+    """Put a page on the default dashboard.
+
+    Takes what [Dashboard.include][dachshund.registry.Dashboard.include] does.
+
+    ## Example
+
+    ```python
+    import dachshund
+
+    page = dachshund.Page("errors")
+    dachshund.include(page)
+    ```
+    """
+    return default().include(page)
 
 
 def action(
@@ -607,7 +614,15 @@ def page(name: str, **options: Any) -> Page:
     return default().page(name, **options)
 
 
-def row(*names: str, **options: Any) -> None:
+def column(*widgets: Widget | str) -> Column:
+    """Stack widgets, on the default dashboard.
+
+    Takes what [Dashboard.column][dachshund.registry.Dashboard.column] does.
+    """
+    return default().column(*widgets)
+
+
+def row(*items: Widget | str | Column, **options: Any) -> None:
     """Group widgets into one row, on the default dashboard.
 
     Takes what [Dashboard.row][dachshund.registry.Dashboard.row] does.
@@ -620,4 +635,8 @@ def row(*names: str, **options: Any) -> None:
     dachshund.row("latency", "errors", page="requests")
     ```
     """
-    default().row(*names, **options)
+    default().row(*items, **options)
+
+
+def _repeated(names: list[str]) -> list[str]:
+    return sorted({name for name in names if names.count(name) > 1})

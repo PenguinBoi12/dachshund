@@ -1,16 +1,227 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, Callable, Iterable, TypeVar
+
+from dachshund.actions import Action, make_action
+from dachshund.widgets.base import Widget
 
 DEFAULT_PAGE = "default"
 
+W = TypeVar("W", bound=Widget)
+
 
 @dataclass
-class Page:
-    """A named page of the dashboard, its rows in display order.
+class Column:
+    """Widgets stacked top to bottom, taking one slot of a row."""
 
-    Each row is a list of widget names, left to right. Not meant to be
-    built directly, see `Dashboard.page()`/`Dashboard.row()`.
+    names: list[str]
+
+
+@dataclass
+class Row:
+    """Widgets and columns side by side, left to right.
+
+    ## Options
+
+    - `items` (`list[str | Column]`) - Widget names and columns, in order.
+    - `widths` (`tuple[int, ...]`) - Each item's share of the row, `(2, 1)` for
+      two thirds then one third. Defaults to `None`, equal shares.
     """
 
-    name: str
-    title: str | None = None
-    rows: list[list[str]] = field(default_factory=list)
+    items: list[str | Column]
+    widths: tuple[int, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.widths is None:
+            return
+
+        if len(self.widths) != len(self.items):
+            raise ValueError(
+                f"widths has {len(self.widths)} values for "
+                f"{len(self.items)} items in the row."
+            )
+
+        if any(width < 1 for width in self.widths):
+            raise ValueError("Every width must be at least 1.")
+
+    def weight(self, index: int) -> int:
+        """The share of the row the item at `index` takes."""
+        return self.widths[index] if self.widths else 1
+
+
+def names_of(items: Iterable[Widget | str]) -> list[str]:
+    """Widget names, from widgets or names."""
+    return [item if isinstance(item, str) else item.name for item in items]
+
+
+def row_names(row: Row) -> list[str]:
+    """Every widget name in `row`, columns flattened."""
+    return [
+        name
+        for item in row.items
+        for name in (item.names if isinstance(item, Column) else [item])
+    ]
+
+
+def build_row(
+    items: Iterable["Widget | str | Column"], widths: Iterable[int] | None
+) -> Row:
+    """A row from widgets, names and columns."""
+    return Row(
+        [item if isinstance(item, Column) else names_of([item])[0] for item in items],
+        tuple(widths) if widths is not None else None,
+    )
+
+
+class Page:
+    """A page of the dashboard, with its widgets, layout and actions.
+
+    Register on a page, then put it on the dashboard with `dachshund.include()`.
+    See the [Pages](../guides/pages.md) guide.
+
+    ## Example
+
+    ```python
+    page = Page("overview", title="Overview")
+
+    latency = page.add(TimeSeriesChart("latency"))
+    errors = page.add(Number("errors"))
+    users = page.add(Number("users"))
+    page.row(latency, page.column(errors, users), widths=(2, 1))
+
+    @page.action("flush", label="Flush cache")
+    def flush(ctx): ...
+
+    dachshund.include(page)
+    ```
+
+    ## Options
+
+    - `name` (`str`) - The page's URL, `/<name>`. Can't contain `/`. Required.
+    - `title` (`str`) - Shown in the navigation. Defaults to `name`,
+      underscores as spaces.
+
+    ## Layout
+
+    - A `row()` splits its width between its items, equally unless given
+      `widths`.
+    - A `column()` stacks widgets top to bottom, in one slot of a row.
+    - Widgets in no row fill a grid of equal cards below the rows. A lone card
+      spans the full width.
+
+    ## Tabs
+
+    A page holds either widgets or `tab()`s. Its tabs are listed in a sidebar,
+    and visiting the page shows the first one.
+    """
+
+    def __init__(self, name: str, *, title: str | None = None) -> None:
+        if not name.strip() or "/" in name:
+            raise ValueError("A page name cannot be blank or contain '/'.")
+
+        self.name = name
+        self.title = title
+        self.parent: Page | None = None
+        self.rows: list[Row] = []
+        self.widgets: dict[str, Widget] = {}
+        self.actions: dict[str, Action] = {}
+        self.tabs: dict[str, Page] = {}
+        self.included = False
+
+    @property
+    def path(self) -> str:
+        """Where the page lives, `"parent/tab"` for a tab."""
+        return f"{self.parent.path}/{self.name}" if self.parent else self.name
+
+    def add(self, widget: W) -> W:
+        """Add a widget on the page and return it."""
+        self._check_open()
+
+        if self.tabs:
+            raise ValueError(f"Page {self.path!r} has tabs, add widgets to one.")
+
+        if widget.name in self.widgets:
+            raise ValueError(f"A widget named {widget.name!r} already exists.")
+
+        self.widgets[widget.name] = widget
+
+        return widget
+
+    def column(self, *widgets: Widget | str) -> Column:
+        """Stack widgets of this page, for use in a `row()`."""
+        return Column(self._known(names_of(widgets)))
+
+    def row(
+        self, *items: Widget | str | Column, widths: Iterable[int] | None = None
+    ) -> None:
+        """Lay widgets of this page out side by side, in a row of their own.
+
+        ## Options
+
+        - `widths` (`tuple[int, ...]`) - Each item's share of the row, see
+          [Row][dachshund.Row]. Defaults to equal shares.
+        """
+        self._check_open()
+
+        row = build_row(items, widths)
+        self._known(row_names(row))
+        self.rows.append(row)
+
+    def tab(self, name: str, *, title: str | None = None) -> "Page":
+        """Add a tab, a page nested under this one, and return it.
+
+        ## Options
+
+        - `name` (`str`) - The tab's URL, `/<page>/<name>`. Required.
+        - `title` (`str`) - Shown in the sidebar. Defaults to `name`, underscores
+          as spaces.
+        """
+        self._check_open()
+
+        if self.widgets:
+            raise ValueError(
+                f"Page {self.path!r} has widgets, it can't also have tabs."
+            )
+
+        if name in self.tabs:
+            raise ValueError(f"A tab named {name!r} already exists.")
+
+        tab = self.tabs[name] = Page(name, title=title)
+        tab.parent = self
+
+        return tab
+
+    def action(
+        self, name: str, *, label: str | None = None, confirm: bool = False
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register an action, see [Dashboard.action][dachshund.Dashboard.action]."""
+
+        def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
+            self._check_open()
+
+            if name in self.actions:
+                raise ValueError(f"An action named {name!r} already exists.")
+
+            self.actions[name] = make_action(
+                name, handler, label=label, confirm=confirm
+            )
+            return handler
+
+        return decorator
+
+    def every(self) -> list["Page"]:
+        """This page and its tabs, recursively."""
+        return [self, *(page for tab in self.tabs.values() for page in tab.every())]
+
+    def _known(self, names: list[str]) -> list[str]:
+        unknown = [name for name in names if name not in self.widgets]
+
+        if unknown:
+            raise ValueError(f"Not on page {self.path!r}: {', '.join(unknown)}.")
+
+        return names
+
+    def _check_open(self) -> None:
+        if self.included:
+            raise RuntimeError(
+                f"Page {self.path!r} is already included in a dashboard."
+            )

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dachshund.widgets.base import WIDGETS, Widget, build
+from dachshund.widgets.base import WIDGETS, Widget
 from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
@@ -14,18 +14,12 @@ from dachshund.widgets.table.table import Table
 FIXTURE_SCRIPT = Path(__file__).parent.parent / "fixtures" / "gauge.js"
 
 
-@pytest.mark.parametrize("size", [0, 4])
-def test_widget_with_a_size_off_the_grid__expect_value_error(size: int) -> None:
-    with pytest.raises(ValueError, match="1 to 3 columns"):
-        Widget("latency", source="latency", size=size)
+def test_widget_without_a_source__expect_its_name() -> None:
+    assert Widget("latency").source == "latency"
 
 
-@pytest.mark.parametrize("type", ["line", "timeseries", "button"])
-def test_build_of_a_non_persistable_type_with_persist__expect_type_error(
-    type: str,
-) -> None:
-    with pytest.raises(TypeError, match="can't persist"):
-        build("latency", type=type, persist=True)
+def test_widget_with_a_source__expect_it_kept() -> None:
+    assert Widget("latency", source="ping").source == "ping"
 
 
 def test_an_intermediate_base_without_its_own_type__expect_it_not_registered() -> None:
@@ -69,16 +63,6 @@ def test_a_widget_subclass__expect_it_registered_under_its_type() -> None:
         type = "custom_test_gauge"
 
     assert WIDGETS["custom_test_gauge"] is Gauge
-
-
-def test_build_of_a_custom_type__expect_it_constructed() -> None:
-    class Meter(Widget):
-        type = "custom_test_meter"
-
-    widget = build("dial", type="custom_test_meter")
-
-    assert isinstance(widget, Meter)
-    assert widget.source == "dial"
 
 
 def test_widget_script_and_style_default__expect_none() -> None:

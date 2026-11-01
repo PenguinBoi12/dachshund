@@ -9,28 +9,23 @@ from dachshund.widgets.markup import render_markdown
 
 @dataclass
 class Text(PersistableWidget):
-    """The latest markdown from its source, rendered to sanitized HTML.
+    """The latest markdown of its source, rendered to sanitized HTML.
 
-    `y` names the field read and defaults to `value`.
+    Raw HTML in the markdown is escaped, and only `http`, `https` and `mailto`
+    links are kept.
 
     ## Example
 
     ```python
-    dachshund.widget("changelog", type="text", title="Release Notes")
+    dachshund.add(Text("changelog", title="Release Notes"))
     dachshund.emit("changelog", value="**v1.2** fixed the thing.")
     ```
 
-    With `persist=True`, the text survives a restart instead of only
-    covering whatever's still kept in the event log. This needs
-    `storage=...` configured on the dashboard first, there's no default.
+    ## Options
 
-    ```python
-    from dachshund.storage.sqlite import SQLiteStorage
-
-    dachshund.init(storage=SQLiteStorage("widget_state.db"))
-    dachshund.widget("changelog", type="text", persist=True)
-    dachshund.emit("changelog", value="**v1.2** fixed the thing.")
-    ```
+    - `y` (`str`) - The field read. Defaults to `"value"`.
+    - `persist` (`bool`) - Keeps the latest text across restarts. Needs the
+      dashboard's `storage`. Defaults to `False`.
     """
 
     _: KW_ONLY

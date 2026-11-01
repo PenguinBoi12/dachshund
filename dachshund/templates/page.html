@@ -1,31 +1,57 @@
 {% extends "base.html" %}
 
+{% macro card(widget, weight=none) %}
+<section class="card"{% if weight %} style="--weight: {{ weight }}"{% endif %}
+         data-widget="{{ widget.name }}"
+         data-type="{{ widget.type }}"
+         data-payload="{{ widget.payload }}">
+  <h2 class="card-title">{{ widget.title }}</h2>
+  <div class="card-content"></div>
+  {% if widget.actions %}
+  <div class="card-actions">
+    {% for action in widget.actions %}
+    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endmacro %}
+
 {% block content %}
+<div class="content{% if tabs %} tabbed{% endif %}">
+{% if tabs %}
+<nav class="tabs">
+  {% for tab in tabs %}
+  <a href="{{ tab.url }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+<div class="layout">
 {% for row in rows %}
-<div class="grid">
-  {% for widget in row %}
-  <section class="card span-{{ widget.size }}"
-           data-widget="{{ widget.name }}"
-           data-type="{{ widget.type }}"
-           data-payload="{{ widget.payload }}">
-    <h2 class="card-title">{{ widget.title }}</h2>
-    <div class="card-content"></div>
-    {% if widget.actions %}
-    <div class="card-actions">
-      {% for action in widget.actions %}
-      <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </section>
+<div class="row">
+  {% for item in row %}
+  {% if item.column %}
+  <div class="column" style="--weight: {{ item.weight }}">
+    {% for widget in item.column %}{{ card(widget) }}{% endfor %}
+  </div>
+  {% else %}
+  {{ card(item, item.weight) }}
+  {% endif %}
   {% endfor %}
 </div>
-{% else %}
-<div class="grid">
-  <section class="card empty span-3">
+{% endfor %}
+{% if flow %}
+<div class="flow">
+  {% for widget in flow %}{{ card(widget) }}{% endfor %}
+</div>
+{% elif not rows %}
+<div class="row">
+  <section class="card empty">
     <h2 class="card-title">Nothing here yet</h2>
     <p class="card-body">Register a widget to start building this dashboard.</p>
   </section>
 </div>
-{% endfor %}
+{% endif %}
+</div>
+</div>
 {% endblock %}

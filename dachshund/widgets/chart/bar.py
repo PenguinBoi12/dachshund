@@ -10,44 +10,35 @@ UNLABELLED = "—"
 
 @dataclass
 class BarChart(KeyedWidget):
-    """A bar per category, totalling the events of its source.
+    """A bar per category, totalling a field of its events.
 
-    `x` names the field the categories come from and `y` what is totalled.
-
-    A bar is a snapshot, not a stream: an event replaces its bar's height
-    rather than adding a point, and the whole chart is redrawn on every
-    update. Bars keep the order their categories first appeared in.
+    Bars keep the order their categories first appeared in.
 
     ## Example
 
     ```python
-    dachshund.chart("commands", type="bar", x="name")
+    dachshund.add(BarChart("commands", x="name"))
     dachshund.emit("commands", name="/ban", value=1)
     ```
 
-    Totalling a field rather than counting, fed by another name:
+    ## Options
+
+    - `x` (`str`) - The field naming an event's category. Required.
+    - `y` (`str`) - The field added to the category's total. Defaults to
+      `"value"`.
+    - `persist` (`bool`) - Keeps the totals across restarts. Needs the
+      dashboard's `storage`. Defaults to `False`.
+
+    ## Removing a category
+
+    A truthy `_delete` field removes the event's category:
 
     ```python
-    dachshund.chart("load", type="bar", x="name", y="ms", source="on_command")
-    dachshund.emit("on_command", name="/ban", ms=96)
-    ```
-
-    With `persist=True`, totals survive a restart instead of only covering
-    the events currently kept. This needs `storage=...` configured on the
-    dashboard first, there's no default. A truthy `_delete` field removes a
-    category instead of adding to it:
-
-    ```python
-    from dachshund.storage.sqlite import SQLiteStorage
-
-    dachshund.init(storage=SQLiteStorage("widget_state.db"))
-    commands = dachshund.chart("commands", type="bar", x="name", persist=True)
-    dachshund.emit("commands", name="/ban", value=1)
     dachshund.emit("commands", name="/ban", _delete=True)
-
-    # after a full resync (e.g. re-emitting every current category):
-    commands.sweep(before=time.time())
     ```
+
+    On a persisted chart, `sweep(before)` removes every category not seen
+    since `before`, see [KeyedWidget][dachshund.widgets.state.KeyedWidget].
     """
 
     _: KW_ONLY

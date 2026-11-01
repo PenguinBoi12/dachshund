@@ -34,7 +34,7 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
 
     ```python
     dashboard = Dashboard(path=":memory:")
-    dashboard.chart("latency", type="timeseries")
+    dashboard.add(TimeSeriesChart("latency"))
     dashboard.emit("latency", value=96)
 
     events = dashboard.drain()

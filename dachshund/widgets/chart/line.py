@@ -9,28 +9,23 @@ from dachshund.widgets.value import numeric
 
 @dataclass
 class LineChart(Widget):
-    """A line of one value against another, both read from the event.
+    """A line of one field against another.
 
-    `x` names the field placing a point and `y` the field drawn, or several
-    fields for several lines sharing that x. An event missing `x` has
-    nowhere to sit, so it draws nothing.
-
-    Use [TimeSeriesChart][dachshund.TimeSeriesChart] instead to draw against
-    the time events happened.
+    An event without `x` isn't drawn. To draw against when events happened,
+    see [TimeSeriesChart][dachshund.TimeSeriesChart].
 
     ## Example
 
     ```python
-    dachshund.chart("throughput", type="line", x="requests", y="latency")
+    dachshund.add(LineChart("throughput", x="requests", y="latency"))
     dachshund.emit("throughput", requests=120, latency=96)
     ```
 
-    A line per field, against one x:
+    ## Options
 
-    ```python
-    dachshund.chart("perf", type="line", x="load", y=["p50", "p95"])
-    dachshund.emit("perf", load=10, p50=4, p95=20)
-    ```
+    - `x` (`str`) - The field placing a point. Required.
+    - `y` (`str | list[str]`) - The field drawn, or one line per field.
+      Defaults to `"value"`.
     """
 
     _: KW_ONLY

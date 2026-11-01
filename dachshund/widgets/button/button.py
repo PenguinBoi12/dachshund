@@ -7,28 +7,32 @@ from dachshund.widgets.base import Widget
 
 @dataclass
 class Button(Widget):
-    """A card that's nothing but a title and its action buttons.
-
-    No data of its own, `actions` (see [Widget][dachshund.Widget]) is the
-    whole point of one. There's no row or event behind a click here, so an
-    action needing arguments gets them from `action_args` instead, fixed at
-    registration time.
+    """A card with nothing but a title and action buttons.
 
     ## Example
 
     ```python
     @dachshund.action("ban", label="Ban", confirm=True)
-    def ban_user(ctx: dachshund.Context, user_id: str) -> None:
-        ...
+    def ban(ctx, user_id: str) -> None: ...
 
-    dachshund.widget(
-        "ban",
-        type="button",
-        title="Ban a user",
-        actions=["ban"],
-        action_args={"ban": {"user_id": "42"}},
+    dachshund.add(
+        Button(
+            "ban",
+            title="Ban a user",
+            actions=["ban"],
+            action_args={"ban": {"user_id": "42"}},
+        )
     )
     ```
+
+    ## Options
+
+    - `actions` (`list[str]`) - The actions shown as buttons. Defaults to `[]`.
+    - `action_args` (`dict[str, dict]`) - The arguments each action is called
+      with, by action name. Defaults to `{}`.
+
+    A button has no event or row behind it, so `action_args` is the only way
+    to pass an action arguments.
     """
 
     type: ClassVar[str] = "button"

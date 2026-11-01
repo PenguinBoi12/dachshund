@@ -8,7 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 import dachshund
 from dachshund.actions import action_card, bind_args, invoke, resolve_row_actions
 from dachshund.filters import FILTERS
-from dachshund.layout import DEFAULT_PAGE
+from dachshund.layout import DEFAULT_PAGE, Column, Page
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
 from dachshund.widgets.base import WIDGETS, Widget
@@ -61,7 +61,6 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
         "name": widget.name,
         "type": widget.type,
         "title": heading(widget),
-        "size": widget.size,
         "payload": json.dumps(payload),
         "actions": (
             []
@@ -76,26 +75,61 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
 
 async def cards(
     dashboard: Dashboard, page: str = DEFAULT_PAGE
-) -> list[list[dict[str, Any]]]:
-    """Build the cards of `page`, one list per row, in display order."""
-    return [
-        [await card(dashboard, dashboard.widgets[name]) for name in row]
-        for row in dashboard.layout(page)
-    ]
+) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Build the cards of `page`: its rows, then the cards in no row.
+
+    A column in a row comes out as `{"column": [cards]}`. Every item of a
+    row carries its `weight`, its share of the row's width.
+    """
+
+    async def build(name: str) -> dict[str, Any]:
+        return await card(dashboard, dashboard.widgets[name])
+
+    rows, flow = dashboard.layout(page)
+    built_rows = []
+
+    for row in rows:
+        built = []
+
+        for index, item in enumerate(row.items):
+            cell = (
+                {"column": [await build(name) for name in item.names]}
+                if isinstance(item, Column)
+                else await build(item)
+            )
+            built.append({**cell, "weight": row.weight(index)})
+
+        built_rows.append(built)
+
+    return built_rows, [await build(name) for name in flow]
 
 
 def page_names(dashboard: Dashboard) -> list[str]:
-    """The pages worth showing, in navigation order.
+    """The top-level pages worth showing, in navigation order.
 
     `"default"` comes first, unless other pages are declared and it has
     no widgets left on it.
     """
-    declared = [name for name in dashboard.pages if name != DEFAULT_PAGE]
+    declared = [
+        name
+        for name, page in dashboard.pages.items()
+        if page.parent is None and name != DEFAULT_PAGE
+    ]
 
-    if not declared or dashboard.layout(DEFAULT_PAGE):
+    if not declared or any(dashboard.layout(DEFAULT_PAGE)):
         return [DEFAULT_PAGE, *declared]
 
     return declared
+
+
+def shown(dashboard: Dashboard, path: str) -> str:
+    """The page actually drawn for `path`, its first tab if it has tabs."""
+    page = dashboard.pages.get(path)
+
+    while page is not None and page.tabs:
+        page = next(iter(page.tabs.values()))
+
+    return page.path if page is not None else path
 
 
 def page_title(dashboard: Dashboard, name: str) -> str:
@@ -105,7 +139,28 @@ def page_title(dashboard: Dashboard, name: str) -> str:
     if declared is not None and declared.title:
         return declared.title
 
-    return DEFAULT_PAGE_TITLE if name == DEFAULT_PAGE else name.replace("_", " ")
+    if name == DEFAULT_PAGE:
+        return DEFAULT_PAGE_TITLE
+
+    return name.rsplit("/", 1)[-1].replace("_", " ")
+
+
+def tab_links(dashboard: Dashboard, path: str) -> list[dict[str, Any]]:
+    """The tab bar for the page at `path`, empty unless it's a tab."""
+    page = dashboard.pages.get(path)
+    parent: Page | None = page.parent if page is not None else None
+
+    if parent is None:
+        return []
+
+    return [
+        {
+            "url": f"/{tab.path}",
+            "title": page_title(dashboard, tab.path),
+            "current": tab.path == path,
+        }
+        for tab in parent.tabs.values()
+    ]
 
 
 def _asset_urls(dashboard: Dashboard, attr: str, suffix: str) -> list[str]:
@@ -173,26 +228,32 @@ async def widget_page(request: web.Request) -> web.Response:
     return web.json_response(payload)
 
 
-async def render_page(request: web.Request, page: str) -> web.Response:
-    """Render one page of the dashboard."""
+async def render_page(request: web.Request, path: str) -> web.Response:
+    """Render one page of the dashboard, `"parent/tab"` for a tab."""
     dashboard = request.app[DASHBOARD]
     template = request.app[TEMPLATES].get_template("page.html")
     names = page_names(dashboard)
+    page = shown(dashboard, path)
+    top = page.split("/", 1)[0]
+    rows, flow = await cards(dashboard, page)
 
     html = template.render(
         name=dashboard.name or FALLBACK_NAME,
         description=dashboard.description,
         started_at=dashboard.started_at,
         page=page,
-        rows=await cards(dashboard, page),
+        heading=page_title(dashboard, top),
+        rows=rows,
+        flow=flow,
         pages=[
             {
                 "url": "/" if name == names[0] else f"/{name}",
                 "title": page_title(dashboard, name),
-                "current": name == page,
+                "current": name == top,
             }
             for name in names
         ],
+        tabs=tab_links(dashboard, page),
         widget_scripts=widget_scripts(dashboard),
         widget_styles=widget_styles(dashboard),
         version=dachshund.__version__,
@@ -219,6 +280,17 @@ async def named_page(request: web.Request) -> web.Response:
         raise web.HTTPFound("/")
 
     return await render_page(request, page)
+
+
+async def named_tab(request: web.Request) -> web.Response:
+    """Render the tab named in the URL."""
+    path = f"{request.match_info['page']}/{request.match_info['tab']}"
+    page = request.app[DASHBOARD].pages.get(path)
+
+    if page is None or page.parent is None:
+        raise web.HTTPNotFound()
+
+    return await render_page(request, path)
 
 
 async def run_action(request: web.Request) -> web.Response:
@@ -282,6 +354,7 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
     # Last, so a page name never shadows one of the routes above.
     app.router.add_get("/{page}", named_page, name="page")
+    app.router.add_get("/{page}/{tab}", named_tab, name="tab")
 
     app.cleanup_ctx.append(pumping)
 
