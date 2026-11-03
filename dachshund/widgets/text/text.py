@@ -17,7 +17,7 @@ class Text(PersistableWidget):
     ## Example
 
     ```python
-    dachshund.add(Text("changelog", title="Release Notes"))
+    dachshund.row(Text("changelog", title="Release Notes"))
     dachshund.emit("changelog", value="**v1.2** fixed the thing.")
     ```
 

@@ -18,8 +18,8 @@ A widget's source is its name, unless it's given one:
 ```python
 from dachshund import BarChart, Number
 
-dachshund.add(Number("latency"))
-dachshund.add(BarChart("slow_routes", source="latency", x="route"))
+dachshund.row(Number("latency"))
+dachshund.row(BarChart("slow_routes", source="latency", x="route"))
 
 dachshund.emit("latency", route="/users", value=840)
 ```
@@ -47,5 +47,5 @@ Each widget is built from the latest 500 events of its source. After 30 minutes,
 To keep a widget's state for good, like a running total or the last value, build it with `persist=True`. See [Persistent Storage](persistent-storage.md).
 
 ```python
-dachshund.add(BarChart("commands", x="name", persist=True))
+dachshund.row(BarChart("commands", x="name", persist=True))
 ```

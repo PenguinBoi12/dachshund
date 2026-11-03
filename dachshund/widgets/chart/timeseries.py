@@ -12,7 +12,7 @@ class TimeSeriesChart(LineChart):
     ## Example
 
     ```python
-    dachshund.add(TimeSeriesChart("latency", y=["p50", "p95"]))
+    dachshund.row(TimeSeriesChart("latency", y=["p50", "p95"]))
     dachshund.emit("latency", p50=10, p95=40)
     ```
 

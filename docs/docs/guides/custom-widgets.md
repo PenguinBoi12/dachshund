@@ -72,7 +72,7 @@ class Gauge(Widget):
 import dachshund
 from gauge import Gauge
 
-dachshund.add(Gauge("cpu"))
+dachshund.row(Gauge("cpu"))
 dachshund.emit("cpu", value=42)
 ```
 
@@ -117,7 +117,7 @@ The dashboard needs a `storage`, see [Persistent Storage](persistent-storage.md)
 from dachshund.storage.sqlite import SQLiteStorage
 
 dachshund.init(storage=SQLiteStorage("widget_state.db"))
-dachshund.add(Gauge("cpu", persist=True))
+dachshund.row(Gauge("cpu", persist=True))
 ```
 
 For state with one entry per key, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] instead. It provides the three hooks.

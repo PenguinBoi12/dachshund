@@ -37,13 +37,13 @@ async def deactivate(ctx, id: str) -> None:
     await ctx["db"].deactivate_user(int(id))
 
 
-overview_page.add(Text("summary"))
+overview_page.row(Text("summary"))
 overview_page.row(
     Number("user_count"),
     TimeSeriesChart("latency"),
     widths=(1, 2),
 )
-overview_page.add(
+overview_page.row(
     Table("users", columns=["id", "name", "email"], loader=load_users, actions=["deactivate"])
 )
 ```
@@ -59,7 +59,7 @@ activity_page.row(
     BarChart("requests_per_day", x="date", persist=True),
     widths=(1, 2),
 )
-activity_page.add(BarChart("errors_per_route", x="route", persist=True))
+activity_page.row(BarChart("errors_per_route", x="route", persist=True))
 ```
 
 Code shared by several pages, like a table's loader, goes in a module of its own:
@@ -129,8 +129,8 @@ A library can ship a page the same way, for applications to include:
 from dachshund import Number, Page, Table
 
 jobs_page = Page("jobs", title="Jobs")
-jobs_page.add(Number("queued_jobs"))
-jobs_page.add(Table("jobs", columns=["id", "name", "status"], key="id"))
+jobs_page.row(Number("queued_jobs"))
+jobs_page.row(Table("jobs", columns=["id", "name", "status"], key="id"))
 ```
 
 ```python

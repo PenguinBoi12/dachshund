@@ -37,13 +37,13 @@ dachshund.init("My service", description="What my service does")
 
 #### 3- Add a page
 
-`add()` gives a widget a row of its own, `row()` puts widgets side by side.
+`row()` puts widgets side by side. A row with one widget takes the full width.
 
 ```python
 from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
-page.add(Number("users"))
+page.row(Number("users"))
 page.row(TimeSeriesChart("latency"), TimeSeriesChart("errors"))
 
 dachshund.include(page)

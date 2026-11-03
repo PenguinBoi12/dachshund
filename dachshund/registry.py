@@ -15,7 +15,6 @@ from dachshund.layout import (
     Column,
     Page,
     Row,
-    W,
     build_row,
     row_names,
     unplace,
@@ -49,7 +48,7 @@ class Dashboard:
 
     ```python
     dashboard = Dashboard("Ada", description="Code Society's Matrix bot")
-    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.row(TimeSeriesChart("latency"))
     dashboard.start()
     ```
 
@@ -140,27 +139,6 @@ class Dashboard:
         """
         self.stop()
         self.events.close()
-
-    def add(self, widget: W, *, page: str | None = None) -> W:
-        """Add a widget, in a full-width row of its own, and return it.
-
-        ## Example
-
-        ```python
-        latency = dashboard.add(TimeSeriesChart("latency"))
-        dashboard.add(Number("errors"), page="errors")
-        ```
-
-        ## Options
-
-        - `page` (`str`) - The page it goes on, declared if new. Defaults to
-          `"default"`.
-        """
-        target = page or DEFAULT_PAGE
-        self._register(widget, target)
-        self.pages[target].rows.append(Row([widget.name]))
-
-        return widget
 
     def action(
         self, name: str, *, label: str | None = None, confirm: bool = False
@@ -254,7 +232,7 @@ class Dashboard:
 
         ```python
         page = Page("errors", title="Errors")
-        page.add(BarChart("errors", x="code"))
+        page.row(BarChart("errors", x="code"))
         dashboard.include(page)
         ```
         """
@@ -398,7 +376,7 @@ class Dashboard:
         self._check_storage(widget)
 
         if page is not None and self.page(page).tabs:
-            raise ValueError(f"Page {page!r} has tabs, add widgets to one.")
+            raise ValueError(f"Page {page!r} has tabs, put widgets on one.")
 
         self.widgets[widget.name] = widget
 
@@ -532,22 +510,6 @@ def shutdown() -> None:
 
         _dashboard.stop()
         atexit.unregister(_dashboard.stop)
-
-
-def add(widget: W, *, page: str | None = None) -> W:
-    """Add a widget, on the default dashboard.
-
-    Takes what [Dashboard.add][dachshund.registry.Dashboard.add] does.
-
-    ## Example
-
-    ```python
-    import dachshund
-
-    dachshund.add(dachshund.TimeSeriesChart("latency"))
-    ```
-    """
-    return default().add(widget, page=page)
 
 
 def include(page: Page) -> Page:

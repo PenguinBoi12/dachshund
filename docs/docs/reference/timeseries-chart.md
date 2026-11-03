@@ -6,7 +6,7 @@
 import dachshund
 from dachshund import TimeSeriesChart
 
-dachshund.add(TimeSeriesChart("latency"))
+dachshund.row(TimeSeriesChart("latency"))
 dachshund.emit("latency", value=96)
 ```
 

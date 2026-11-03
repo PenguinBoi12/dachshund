@@ -8,7 +8,7 @@ from dachshund import Number, Page, Text, TimeSeriesChart
 
 overview_page = Page("overview", title="Overview")
 
-overview_page.add(Text("summary"))
+overview_page.row(Text("summary"))
 overview_page.row(
     TimeSeriesChart("latency"),
     overview_page.column(Number("errors"), Number("users")),
@@ -39,16 +39,15 @@ Pages show in the navigation in the order they're included. Widget and action na
 └────────────────────┴──────────┘
 ```
 
-- `add()` gives a widget a full-width row of its own.
-- `row()` puts widgets side by side, equally unless given `widths`. `widths=(2, 1)` gives the first two thirds.
+- `row()` puts widgets side by side, equally unless given `widths`. `widths=(2, 1)` gives the first two thirds. A row with one widget takes the full width.
 - `column()` stacks widgets top to bottom, in one slot of a row.
 - Rows show in the order they were made. On a narrow screen, row items wrap under each other.
 
-`row()` and `column()` also take widgets already added, which move out of their old row:
+To keep a reference to a widget, build it first, then place it:
 
 ```python
-latency = overview_page.add(TimeSeriesChart("latency"))
-overview_page.row(Number("users"), latency)
+sessions = Table("sessions", columns=["user"], key="user", persist=True)
+overview_page.row(sessions)
 ```
 
 ## Tabs
@@ -61,10 +60,10 @@ from dachshund import BarChart, Page
 activity_page = Page("activity", title="Activity")
 
 commands = activity_page.tab("commands", title="Commands")
-commands.add(BarChart("commands", x="name"))
+commands.row(BarChart("commands", x="name"))
 
 errors = activity_page.tab("errors", title="Errors")
-errors.add(BarChart("errors_per_command", x="name"))
+errors.row(BarChart("errors_per_command", x="name"))
 ```
 
 ## Without a `Page`
@@ -75,8 +74,8 @@ Widgets can also go straight on the dashboard. Without `page=`, they land on the
 import dachshund
 from dachshund import Number, TimeSeriesChart
 
-dachshund.add(TimeSeriesChart("latency"))
-dachshund.add(Number("errors"), page="errors")
+dachshund.row(TimeSeriesChart("latency"))
+dachshund.row(Number("errors"), page="errors")
 ```
 
 `dachshund.row()` and `dachshund.column()` lay them out, with `page=` naming the row's page.

@@ -1,12 +1,10 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, TypeVar
+from typing import Any, Callable, Iterable
 
 from dachshund.actions import Action, make_action
 from dachshund.widgets.base import Widget
 
 DEFAULT_PAGE = "default"
-
-W = TypeVar("W", bound=Widget)
 
 
 @dataclass
@@ -114,7 +112,7 @@ class Page:
     ```python
     page = Page("overview", title="Overview")
 
-    page.add(Text("summary"))
+    page.row(Text("summary"))
     page.row(
         TimeSeriesChart("latency"),
         page.column(Number("errors"), Number("users")),
@@ -135,8 +133,8 @@ class Page:
 
     ## Layout
 
-    - `add()` gives a widget a full-width row of its own.
-    - `row()` puts widgets side by side, equally unless given `widths`.
+    - `row()` puts widgets side by side, equally unless given `widths`. A row
+      with one widget takes the full width.
     - `column()` stacks widgets top to bottom, in one slot of a row.
 
     Rows show in the order they were made. `row()` and `column()` take new
@@ -165,13 +163,6 @@ class Page:
     def path(self) -> str:
         """Where the page lives, `"parent/tab"` for a tab."""
         return f"{self.parent.path}/{self.name}" if self.parent else self.name
-
-    def add(self, widget: W) -> W:
-        """Add a widget on the page, in a full-width row of its own, and return it."""
-        self._register(widget)
-        self.rows.append(Row([widget.name]))
-
-        return widget
 
     def column(self, *widgets: Widget | str) -> Column:
         """Stack widgets top to bottom, for use in a `row()`."""
@@ -243,7 +234,7 @@ class Page:
         self._check_open()
 
         if self.tabs:
-            raise ValueError(f"Page {self.path!r} has tabs, add widgets to one.")
+            raise ValueError(f"Page {self.path!r} has tabs, put widgets on one.")
 
         if widget.name in self.widgets:
             raise ValueError(f"A widget named {widget.name!r} already exists.")

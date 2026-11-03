@@ -12,7 +12,6 @@ from dachshund.layout import Column, Page, Row
 from dachshund.registry import (
     Dashboard,
     action,
-    add,
     column,
     default,
     emit,
@@ -53,7 +52,6 @@ __all__ = [
     "TimeSeriesChart",
     "Widget",
     "action",
-    "add",
     "column",
     "default",
     "emit",

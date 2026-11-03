@@ -17,7 +17,7 @@ class BarChart(KeyedWidget):
     ## Example
 
     ```python
-    dachshund.add(BarChart("commands", x="name"))
+    dachshund.row(BarChart("commands", x="name"))
     dachshund.emit("commands", name="/ban", value=1)
     ```
 

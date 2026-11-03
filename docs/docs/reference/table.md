@@ -6,7 +6,7 @@
 import dachshund
 from dachshund import Table
 
-dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))
+dachshund.row(Table("sessions", columns=["user", "ip"], key="user"))
 dachshund.emit("sessions", user="ada", ip="10.0.0.1")
 ```
 

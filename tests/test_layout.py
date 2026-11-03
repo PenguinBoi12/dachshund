@@ -26,26 +26,28 @@ def test_two_pages__expect_independent_rows() -> None:
     assert second.rows == []
 
 
-def test_add__expect_the_widget_returned() -> None:
+def test_row__expect_the_widget_registered() -> None:
     page = Page("requests")
     latency = TimeSeriesChart("latency")
 
-    assert page.add(latency) is latency
+    page.row(latency)
+
     assert page.widgets == {"latency": latency}
 
 
-def test_add_a_duplicate_name__expect_value_error() -> None:
+def test_row_of_a_duplicate_name__expect_value_error() -> None:
     page = Page("requests")
-    page.add(TimeSeriesChart("latency"))
+    page.row(TimeSeriesChart("latency"))
 
     with pytest.raises(ValueError, match="already exists"):
-        page.add(TimeSeriesChart("latency"))
+        page.row(TimeSeriesChart("latency"))
 
 
 def test_row_of_widgets_and_names__expect_names_recorded() -> None:
     page = Page("requests")
-    latency = page.add(TimeSeriesChart("latency"))
-    page.add(TimeSeriesChart("errors"))
+    latency = TimeSeriesChart("latency")
+    page.row(latency)
+    page.row(TimeSeriesChart("errors"))
 
     page.row(latency, "errors")
 
@@ -54,9 +56,12 @@ def test_row_of_widgets_and_names__expect_names_recorded() -> None:
 
 def test_row_with_a_column__expect_it_kept_as_one_slot() -> None:
     page = Page("requests")
-    latency = page.add(TimeSeriesChart("latency"))
-    errors = page.add(TimeSeriesChart("errors"))
-    cpu = page.add(TimeSeriesChart("cpu"))
+    latency = TimeSeriesChart("latency")
+    page.row(latency)
+    errors = TimeSeriesChart("errors")
+    page.row(errors)
+    cpu = TimeSeriesChart("cpu")
+    page.row(cpu)
 
     page.row(latency, page.column(errors, cpu))
 
@@ -84,18 +89,18 @@ def test_tab__expect_a_nested_page_with_a_path() -> None:
 
 def test_tab_on_a_page_with_widgets__expect_value_error() -> None:
     page = Page("activity")
-    page.add(TimeSeriesChart("latency"))
+    page.row(TimeSeriesChart("latency"))
 
     with pytest.raises(ValueError, match="can't also have tabs"):
         page.tab("commands")
 
 
-def test_add_on_a_page_with_tabs__expect_value_error() -> None:
+def test_row_on_a_page_with_tabs__expect_value_error() -> None:
     page = Page("activity")
     page.tab("commands")
 
     with pytest.raises(ValueError, match="has tabs"):
-        page.add(TimeSeriesChart("latency"))
+        page.row(TimeSeriesChart("latency"))
 
 
 def test_action__expect_it_registered_and_the_handler_returned() -> None:
@@ -121,13 +126,15 @@ def test_registering_on_an_included_page__expect_runtime_error() -> None:
     page.included = True
 
     with pytest.raises(RuntimeError, match="already included"):
-        page.add(TimeSeriesChart("latency"))
+        page.row(TimeSeriesChart("latency"))
 
 
 def test_row_with_widths__expect_them_kept() -> None:
     page = Page("requests")
-    latency = page.add(TimeSeriesChart("latency"))
-    errors = page.add(TimeSeriesChart("errors"))
+    latency = TimeSeriesChart("latency")
+    page.row(latency)
+    errors = TimeSeriesChart("errors")
+    page.row(errors)
 
     page.row(latency, errors, widths=(2, 1))
 
@@ -149,10 +156,10 @@ def test_row_with_a_zero_width__expect_value_error() -> None:
         Row(["latency", "errors"], (2, 0))
 
 
-def test_add__expect_a_full_width_row_per_widget() -> None:
+def test_row_of_one_widget__expect_a_full_width_row_each() -> None:
     page = Page("requests")
-    page.add(TimeSeriesChart("latency"))
-    page.add(TimeSeriesChart("errors"))
+    page.row(TimeSeriesChart("latency"))
+    page.row(TimeSeriesChart("errors"))
 
     assert page.rows == [Row(["latency"]), Row(["errors"])]
 
@@ -169,8 +176,9 @@ def test_row_of_new_widgets__expect_them_added_and_placed() -> None:
 
 def test_row_of_an_added_widget__expect_it_moved_out_of_its_row() -> None:
     page = Page("requests")
-    latency = page.add(TimeSeriesChart("latency"))
-    page.add(TimeSeriesChart("errors"))
+    latency = TimeSeriesChart("latency")
+    page.row(latency)
+    page.row(TimeSeriesChart("errors"))
 
     page.row(TimeSeriesChart("cpu"), latency)
 
@@ -189,7 +197,7 @@ def test_row_taking_the_last_widget_of_a_column__expect_the_column_dropped() -> 
 
 def test_row_of_another_widget_with_a_taken_name__expect_value_error() -> None:
     page = Page("requests")
-    page.add(TimeSeriesChart("latency"))
+    page.row(TimeSeriesChart("latency"))
 
     with pytest.raises(ValueError, match="already exists"):
         page.row(TimeSeriesChart("latency"))
