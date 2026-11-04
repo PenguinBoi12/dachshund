@@ -7,7 +7,7 @@ import dachshund
 from dachshund import TimeSeriesChart
 
 dachshund.init("Ada", description="Code Society's Matrix bot")
-dachshund.row(TimeSeriesChart("latency"))
+dachshund.add(TimeSeriesChart("latency"))
 dachshund.emit("latency", value=96)
 ```
 
@@ -24,3 +24,4 @@ dachshund.emit("latency", value=96)
         - page
         - row
         - column
+        - add

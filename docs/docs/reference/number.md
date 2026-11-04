@@ -6,7 +6,7 @@
 import dachshund
 from dachshund import Number
 
-dachshund.row(Number("cpu", title="CPU Load", unit="%"))
+dachshund.add(Number("cpu", title="CPU Load", unit="%"))
 dachshund.emit("cpu", value=42)
 ```
 

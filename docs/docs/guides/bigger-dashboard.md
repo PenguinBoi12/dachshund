@@ -37,13 +37,12 @@ async def deactivate(ctx, id: str) -> None:
     await ctx["db"].deactivate_user(int(id))
 
 
-overview_page.row(Text("summary"))
-overview_page.row(
-    Number("user_count"),
-    TimeSeriesChart("latency"),
-    widths=(1, 2),
-)
-overview_page.row(
+overview_page.add(Text("summary"))
+with overview_page.row():
+    with overview_page.column(span=4):
+        overview_page.add(Number("user_count"))
+    overview_page.add(TimeSeriesChart("latency"))
+overview_page.add(
     Table("users", columns=["id", "name", "email"], loader=load_users, actions=["deactivate"])
 )
 ```
@@ -54,12 +53,11 @@ from dachshund import BarChart, Number, Page
 
 activity_page = Page("activity", title="Activity")
 
-activity_page.row(
-    Number("requests_today", title="Requests today"),
-    BarChart("requests_per_day", x="date", persist=True),
-    widths=(1, 2),
-)
-activity_page.row(BarChart("errors_per_route", x="route", persist=True))
+with activity_page.row():
+    with activity_page.column(span=4):
+        activity_page.add(Number("requests_today", title="Requests today"))
+    activity_page.add(BarChart("requests_per_day", x="date", persist=True))
+activity_page.add(BarChart("errors_per_route", x="route", persist=True))
 ```
 
 Code shared by several pages, like a table's loader, goes in a module of its own:
@@ -137,8 +135,8 @@ A library can ship a page the same way, for applications to include:
 from dachshund import Number, Page, Table
 
 jobs_page = Page("jobs", title="Jobs")
-jobs_page.row(Number("queued_jobs"))
-jobs_page.row(Table("jobs", columns=["id", "name", "status"], key="id"))
+jobs_page.add(Number("queued_jobs"))
+jobs_page.add(Table("jobs", columns=["id", "name", "status"], key="id"))
 ```
 
 ```python

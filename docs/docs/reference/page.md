@@ -8,17 +8,17 @@ from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
 
-page.row(
-    TimeSeriesChart("latency"),
-    page.column(Number("errors"), Number("users")),
-    widths=(2, 1),
-)
+with page.row():
+    with page.column(span=4):
+        page.add(Number("errors"))
+        page.add(Number("users"))
+    page.add(TimeSeriesChart("latency"))
 
 dachshund.include(page)
 ```
 
 ::: dachshund.layout.Page
 
-::: dachshund.layout.Column
-
 ::: dachshund.layout.Row
+
+::: dachshund.layout.Column

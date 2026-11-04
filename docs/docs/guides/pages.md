@@ -8,12 +8,13 @@ from dachshund import Number, Page, Text, TimeSeriesChart
 
 overview_page = Page("overview", title="Overview")
 
-overview_page.row(Text("summary"))
-overview_page.row(
-    TimeSeriesChart("latency"),
-    overview_page.column(Number("errors"), Number("users")),
-    widths=(2, 1),
-)
+overview_page.add(Text("summary"))
+
+with overview_page.row():
+    overview_page.add(TimeSeriesChart("latency"))
+    with overview_page.column(span=4):
+        overview_page.add(Number("errors"))
+        overview_page.add(Number("users"))
 
 
 @overview_page.action("flush", label="Flush cache")
@@ -39,15 +40,32 @@ Pages show in the navigation in the order they're included. Widget and action na
 └────────────────────┴──────────┘
 ```
 
-- `row()` puts widgets side by side, equally unless given `widths`. `widths=(2, 1)` gives the first two thirds. A row with one widget takes the full width.
-- `column()` stacks widgets top to bottom, in one slot of a row.
-- Rows show in the order they were made. On a narrow screen, row items wrap under each other.
+A page is rows on a 12-column grid, laid out with `with` blocks, so the indentation is the layout. `add()` puts a widget in the innermost open block:
+
+| `add()` inside | the widget goes |
+|---|---|
+| a `column()` | in that column, under the widgets already there |
+| a `row()` | in a column of its own, side by side with the others |
+| nothing | in a full-width row of its own |
+
+- A column's `span` is its width out of 12: 6 is half, 4 a third, 3 a quarter. Columns without a span share what's left evenly, so `latency` above takes 8.
+- Columns line up from one row to the next, since every row uses the same 12 columns.
+- Rows show in the order they were opened. On a narrow screen, every column takes the full width.
+- Loops work inside blocks:
+
+```python
+with overview_page.row():
+    for name in ("cpu", "memory", "disk"):
+        overview_page.add(Number(name))                 # 4 + 4 + 4
+```
+
+This is the same model as LiveDashboard's `<.row>` / `<:col>`.
 
 To keep a reference to a widget, build it first, then place it:
 
 ```python
 sessions = Table("sessions", columns=["user"], key="user", persist=True)
-overview_page.row(sessions)
+overview_page.add(sessions)
 ```
 
 ## Tabs
@@ -59,11 +77,11 @@ from dachshund import BarChart, Page
 
 activity_page = Page("activity", title="Activity")
 
-commands = activity_page.tab("commands", title="Commands")
-commands.row(BarChart("commands", x="name"))
+with activity_page.tab("commands", title="Commands"):
+    activity_page.add(BarChart("commands", x="name"))
 
-errors = activity_page.tab("errors", title="Errors")
-errors.row(BarChart("errors_per_command", x="name"))
+with activity_page.tab("errors", title="Errors"):
+    activity_page.add(BarChart("errors_per_command", x="name"))
 ```
 
 ## Without a `Page`
@@ -74,10 +92,10 @@ Widgets can also go straight on the dashboard. Without `page=`, they land on the
 import dachshund
 from dachshund import Number, TimeSeriesChart
 
-dachshund.row(TimeSeriesChart("latency"))
-dachshund.row(Number("errors"), page="errors")
+dachshund.add(TimeSeriesChart("latency"))
+dachshund.add(Number("errors"), page="errors")
 ```
 
-`dachshund.row()` and `dachshund.column()` lay them out, with `page=` naming the row's page.
+`with dachshund.row():` and `dachshund.column()` lay them out the same way, with `page=` naming the page.
 
 As a dashboard grows, see [Bigger Dashboard](bigger-dashboard.md) for how to split it across modules.
