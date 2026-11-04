@@ -40,7 +40,8 @@ class Dashboard:
 
     ```python
     dashboard = Dashboard("Ada", description="Code Society's Matrix bot")
-    dashboard.add(TimeSeriesChart("latency"))
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
     dashboard.start()
     ```
 
@@ -225,7 +226,8 @@ class Dashboard:
 
         ```python
         page = Page("errors", title="Errors")
-        page.add(BarChart("errors", x="code"))
+        with page.row():
+            page.add(BarChart("errors", x="code"))
         dashboard.include(page)
         ```
         """
@@ -309,7 +311,7 @@ class Dashboard:
         return self._builder(page).column(span)
 
     def add(self, widget: Widget, *, page: str = DEFAULT_PAGE) -> None:
-        """Put a widget in the innermost block open on `page`.
+        """Put a widget in the row or column open on `page`.
 
         See [Page.add][dachshund.layout.Page.add].
 
@@ -585,7 +587,7 @@ def column(**options: Any) -> AbstractContextManager[Column]:
 
 
 def add(widget: Widget, **options: Any) -> None:
-    """Put a widget in the innermost open block, on the default dashboard.
+    """Put a widget in the open row or column, on the default dashboard.
 
     Takes what [Dashboard.add][dachshund.registry.Dashboard.add] does.
 
@@ -594,7 +596,8 @@ def add(widget: Widget, **options: Any) -> None:
     ```python
     import dachshund
 
-    dachshund.add(dachshund.Number("errors"))
+    with dachshund.row():
+        dachshund.add(dachshund.Number("errors"))
     ```
     """
     default().add(widget, **options)

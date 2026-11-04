@@ -38,7 +38,8 @@ class Table(KeyedWidget):
     ## Example
 
     ```python
-    dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))
+    with dachshund.row():
+        dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))
     dachshund.emit("sessions", user="ada", ip="10.0.0.1")
     ```
 
@@ -73,7 +74,8 @@ class Table(KeyedWidget):
     @dachshund.action("ban", label="Ban", confirm=True)
     def ban(ctx, user: str, team_id: str) -> None: ...
 
-    dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
+    with dachshund.row():
+        dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
     dachshund.emit("sessions", user="ada", _team_id="42")
     ```
 
@@ -94,7 +96,8 @@ class Table(KeyedWidget):
 
         return page, len(users)
 
-    dachshund.add(Table("users", columns=["name", "email"], loader=load_users))
+    with dachshund.row():
+        dachshund.add(Table("users", columns=["name", "email"], loader=load_users))
     ```
 
     ## Pagination

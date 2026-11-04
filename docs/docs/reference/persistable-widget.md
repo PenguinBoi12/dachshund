@@ -6,7 +6,8 @@
 import dachshund
 from dachshund import Number
 
-dachshund.add(Number("cpu", persist=True))
+with dachshund.row():
+    dachshund.add(Number("cpu", persist=True))
 ```
 
 ::: dachshund.widgets.persistable.PersistableWidget

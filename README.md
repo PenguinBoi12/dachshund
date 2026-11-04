@@ -39,13 +39,14 @@ dachshund.init("My service", description="What my service does")
 
 #### 3- Add a page
 
-`add()` puts a widget on the page, full width. Inside a `with page.row():` block, widgets sit side by side.
+Widgets live in rows: open one with `with page.row():`, then `page.add()` each widget. Widgets in a row sit side by side, and a row with one widget takes the full width.
 
 ```python
 from dachshund import Number, Page, TimeSeriesChart
 
 page = Page("overview", title="Overview")
-page.add(Number("users"))
+with page.row():
+    page.add(Number("users"))
 
 with page.row():
     page.add(TimeSeriesChart("latency"))

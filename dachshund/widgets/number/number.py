@@ -13,7 +13,8 @@ class Number(PersistableWidget):
     ## Example
 
     ```python
-    dachshund.add(Number("cpu", title="CPU Load", unit="%"))
+    with dachshund.row():
+        dachshund.add(Number("cpu", title="CPU Load", unit="%"))
     dachshund.emit("cpu", value=42)
     ```
 

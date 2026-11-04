@@ -6,7 +6,8 @@
 import dachshund
 from dachshund import BarChart
 
-dachshund.add(BarChart("commands", x="name"))
+with dachshund.row():
+    dachshund.add(BarChart("commands", x="name"))
 dachshund.emit("commands", name="/ban", value=1)
 ```
 

@@ -9,13 +9,14 @@ from dachshund import Number
 @dachshund.action("block_user", label="Block", confirm=True)
 def block_user(ctx, user_id: str) -> None: ...
 
-dachshund.add(
-    Number(
-        "last_signup",
-        actions=["block_user"],
-        action_args={"block_user": {"user_id": "42"}},
+with dachshund.row():
+    dachshund.add(
+        Number(
+            "last_signup",
+            actions=["block_user"],
+            action_args={"block_user": {"user_id": "42"}},
+        )
     )
-)
 ```
 
 ## Arguments

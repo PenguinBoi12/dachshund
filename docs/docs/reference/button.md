@@ -9,7 +9,8 @@ from dachshund import Button
 @dachshund.action("ban", label="Ban", confirm=True)
 def ban(ctx, user_id: str) -> None: ...
 
-dachshund.add(Button("ban", actions=["ban"], action_args={"ban": {"user_id": "42"}}))
+with dachshund.row():
+    dachshund.add(Button("ban", actions=["ban"], action_args={"ban": {"user_id": "42"}}))
 ```
 
 ::: dachshund.widgets.button.button.Button

@@ -24,24 +24,45 @@ def test_two_pages__expect_independent_rows() -> None:
     first = Page("requests")
     second = Page("errors")
 
-    first.add(chart("latency"))
+    with first.row():
+        first.add(chart("latency"))
 
     assert first.rows == [Row([Column(["latency"])])]
     assert second.rows == []
 
 
-def test_add_outside_a_block__expect_a_full_width_row_each() -> None:
+def test_add_outside_a_row__expect_value_error_and_nothing_registered() -> None:
+    page = Page("requests")
+
+    with pytest.raises(ValueError, match="add\\(\\) goes inside a row"):
+        page.add(chart("latency"))
+
+    assert (page.rows, page.widgets) == ([], {})
+
+
+def test_one_widget_rows__expect_a_full_width_row_each() -> None:
     page = Page("requests")
     latency = chart("latency")
 
-    page.add(latency)
-    page.add(chart("errors"))
+    with page.row():
+        page.add(latency)
+    with page.row():
+        page.add(chart("errors"))
 
     assert page.widgets["latency"] is latency
     assert page.rows == [Row([Column(["latency"])]), Row([Column(["errors"])])]
+    assert page.rows[0].spans() == [12]
 
 
-def test_add_in_a_row__expect_a_col_each() -> None:
+def test_add_inside_a_tab_but_outside_a_row__expect_value_error() -> None:
+    page = Page("activity")
+
+    with pytest.raises(ValueError, match="goes inside a row"):
+        with page.tab("commands"):
+            page.add(chart("calls"))
+
+
+def test_add_in_a_row__expect_a_column_each() -> None:
     page = Page("requests")
 
     with page.row():
@@ -85,7 +106,7 @@ def test_add_in_a_loop__expect_every_widget_placed() -> None:
         ([None, 6, None], [3, 6, 3]),
     ],
 )
-def test_row_spans__expect_unsized_cols_sharing_what_is_left(
+def test_row_spans__expect_unsized_columns_sharing_what_is_left(
     spans: list[int | None], expected: list[int]
 ) -> None:
     assert Row([Column([], span) for span in spans]).spans() == expected
@@ -137,7 +158,8 @@ def test_error_inside_a_row__expect_no_row_and_the_page_usable() -> None:
             page.add(chart("latency"))
             raise RuntimeError("boom")
 
-    page.add(chart("latency"))
+    with page.row():
+        page.add(chart("latency"))
 
     assert page.rows == [Row([Column(["latency"])])]
 
@@ -155,10 +177,12 @@ def test_duplicate_name_in_a_row__expect_nothing_registered() -> None:
 
 def test_add_of_a_duplicate_name__expect_value_error() -> None:
     page = Page("requests")
-    page.add(chart("latency"))
+    with page.row():
+        page.add(chart("latency"))
 
     with pytest.raises(ValueError, match="already exists"):
-        page.add(chart("latency"))
+        with page.row():
+            page.add(chart("latency"))
 
 
 def test_tab__expect_rows_and_widgets_on_a_nested_page() -> None:
@@ -187,7 +211,8 @@ def test_tab_inside_a_row__expect_value_error() -> None:
 
 def test_tab_on_a_page_with_widgets__expect_value_error() -> None:
     page = Page("activity")
-    page.add(chart("latency"))
+    with page.row():
+        page.add(chart("latency"))
 
     with pytest.raises(ValueError, match="can't also have tabs"):
         with page.tab("commands"):
@@ -201,7 +226,8 @@ def test_add_on_a_page_with_tabs__expect_value_error() -> None:
         pass
 
     with pytest.raises(ValueError, match="has tabs"):
-        page.add(chart("latency"))
+        with page.row():
+            page.add(chart("latency"))
 
 
 def test_action__expect_it_registered_and_the_handler_returned() -> None:
@@ -227,4 +253,5 @@ def test_registering_on_an_included_page__expect_runtime_error() -> None:
     page.included = True
 
     with pytest.raises(RuntimeError, match="already included"):
-        page.add(chart("latency"))
+        with page.row():
+            page.add(chart("latency"))

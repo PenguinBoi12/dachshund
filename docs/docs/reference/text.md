@@ -6,7 +6,8 @@
 import dachshund
 from dachshund import Text
 
-dachshund.add(Text("changelog", title="Release Notes"))
+with dachshund.row():
+    dachshund.add(Text("changelog", title="Release Notes"))
 dachshund.emit("changelog", value="**v1.2** fixed the thing.")
 ```
 

@@ -150,9 +150,7 @@ class Builder:
             inner.columns.append(Column([widget.name]))
             self.pending.append(widget)
         else:
-            page = self._page()
-            self._commit(page, [widget])
-            page.rows.append(Row([Column([widget.name])]))
+            raise ValueError("add() goes inside a row: with page.row(): page.add(...)")
 
     def _page(self) -> "Page":
         pages = [block for block in self.open if isinstance(block, Page)]
@@ -185,7 +183,8 @@ class Page:
     ```python
     page = Page("overview", title="Overview")
 
-    page.add(Text("summary"))
+    with page.row():
+        page.add(Text("summary"))
 
     with page.row():
         with page.column(span=4):
@@ -207,12 +206,13 @@ class Page:
 
     ## Layout
 
-    A page is rows on a 12-column grid, laid out with `with` blocks.
-    `add()` puts a widget in the innermost open block:
+    A page is rows on a 12-column grid, laid out with `with` blocks. Widgets
+    live in rows: `add()` puts a widget in the innermost open block,
 
     - in a `column()`, stacked under the widgets already there
     - in a `row()`, as a column of its own
-    - anywhere else, as a full-width row
+
+    and raises outside of both. A full-width widget is a row with one widget.
 
     A column's `span` is its width out of 12. Columns without one share what's
     left evenly.
@@ -283,7 +283,7 @@ class Page:
         return self._builder.tab(name, title)
 
     def add(self, widget: Widget) -> None:
-        """Put a widget in the innermost open block, see [Layout](#layout)."""
+        """Put a widget in the open row or column, see [Layout](#layout)."""
         self._builder.add(widget)
 
     def _new_tab(self, name: str, title: str | None) -> "Page":
