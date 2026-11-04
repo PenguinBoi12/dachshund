@@ -448,9 +448,9 @@ async def test_widget_asset_for_a_type_without_one__expect_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_widget_page__expect_the_first_page_with_a_next_cursor() -> None:
+async def test_widget_page__expect_the_first_page_and_a_total() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(Table("sessions", columns=["user"], key="user"))
+    dashboard.row(Table("sessions", columns=["user"], key="user", page_size=5))
     for i in range(6):
         dashboard.emit("sessions", user=f"user{i}")
     await dashboard.events.append(dashboard.drain())
@@ -461,44 +461,53 @@ async def test_widget_page__expect_the_first_page_with_a_next_cursor() -> None:
 
     assert response.status == 200
     assert len(payload["rows"]) == 5
-    assert payload["next_cursor"] == "user4"
+    assert (payload["total"], payload["offset"], payload["limit"]) == (6, 0, 5)
 
 
 @pytest.mark.asyncio
-async def test_widget_page_with_a_cursor__expect_the_slice_after_it_with_resolved_actions() -> (
+async def test_widget_page_with_a_query__expect_it_applied_with_resolved_actions() -> (
     None
 ):
     dashboard = Dashboard(path=":memory:")
     dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
     dashboard.row(Table("sessions", columns=["user"], key="user", actions=["ban"]))
-    for i in range(6):
-        dashboard.emit("sessions", user=f"user{i}")
+    for name in ["carol", "ada", "adam", "bob"]:
+        dashboard.emit("sessions", user=name)
     await dashboard.events.append(dashboard.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
-        response = await client.get("/_widgets/sessions/page?cursor=user4")
+        response = await client.get(
+            "/_widgets/sessions/page?search=ad&sort=user&dir=desc&offset=1&limit=1"
+        )
         payload = await response.json()
 
     assert response.status == 200
-    assert payload["next_cursor"] is None
-    assert len(payload["rows"]) == 1
+    assert [row["fields"]["user"] for row in payload["rows"]] == ["ada"]
+    assert (payload["total"], payload["sort_by"], payload["descending"]) == (
+        2,
+        "user",
+        True,
+    )
     assert payload["rows"][0]["actions"] == [
         {"name": "ban", "label": "Ban", "confirm": True, "args": {}}
     ]
 
 
 @pytest.mark.asyncio
-async def test_widget_page_with_a_stale_cursor__expect_it_restarted() -> None:
+async def test_widget_page_with_a_bad_offset_or_limit__expect_them_clamped() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.row(Table("sessions", columns=["user"], key="user"))
     dashboard.emit("sessions", user="ada")
     await dashboard.events.append(dashboard.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
-        response = await client.get("/_widgets/sessions/page?cursor=nope")
-        payload = await response.json()
+        bad = await (
+            await client.get("/_widgets/sessions/page?offset=-3&limit=nope")
+        ).json()
+        huge = await (await client.get("/_widgets/sessions/page?limit=5000")).json()
 
-    assert [row["fields"]["user"] for row in payload["rows"]] == ["ada"]
+    assert (bad["offset"], bad["limit"]) == (0, 10)
+    assert huge["limit"] == 100
 
 
 @pytest.mark.asyncio
@@ -510,9 +519,7 @@ async def test_widget_page_with_a_loader__expect_its_rows_and_host_loop() -> Non
     seen_loop = None
     seen_ctx = None
 
-    async def load(
-        ctx, cursor: str | None, page_size: int
-    ) -> tuple[list[dict], str | None]:
+    async def load(ctx, query) -> tuple[list[dict], int | None]:
         nonlocal seen_loop, seen_ctx
         seen_loop = asyncio.get_running_loop()
         seen_ctx = ctx
@@ -557,7 +564,7 @@ async def test_widget_page_of_a_non_paginated_widget__expect_not_found() -> None
 @pytest.mark.asyncio
 async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(Table("sessions", columns=["user"], key="user"))
+    dashboard.row(Table("sessions", columns=["user"], key="user", page_size=5))
     for i in range(6):
         dashboard.emit("sessions", user=f"user{i}")
     await dashboard.events.append(dashboard.drain())
@@ -566,7 +573,7 @@ async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
     payload = json.loads(card["payload"])
 
     assert len(payload["rows"]) == 5
-    assert payload["next_cursor"] == "user4"
+    assert payload["total"] == 6
 
 
 def test_page_names_with_nothing_declared__expect_only_default() -> None:

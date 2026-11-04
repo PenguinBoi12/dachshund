@@ -66,12 +66,20 @@ Code shared by several pages, like a table's loader, goes in a module of its own
 
 ```python
 # myapp/dashboard/loaders.py
-async def load_users(ctx, cursor: str | None, page_size: int):
-    start = int(cursor or 0)
-    users = await ctx["db"].users(offset=start, limit=page_size)
-    next_cursor = str(start + page_size) if len(users) == page_size else None
+from dachshund import TableQuery
 
-    return [{"id": u.id, "name": u.name, "email": u.email} for u in users], next_cursor
+
+async def load_users(ctx, query: TableQuery):
+    users = await ctx["db"].users(
+        search=query.search,
+        order_by=query.sort_by,
+        descending=query.descending,
+        offset=query.offset,
+        limit=query.limit,
+    )
+    total = await ctx["db"].count_users(search=query.search)
+
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in users], total
 ```
 
 ## The entry point

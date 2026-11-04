@@ -18,15 +18,52 @@
     return button;
   };
 
-  const buildTable = (columns, rows, withActions, pageSize) => {
+  const SEARCH_DELAY = 250;
+
+  const header = (state, column, sortable) => {
+    const th = document.createElement("th");
+
+    if (!sortable.includes(column)) {
+      th.textContent = column;
+      return th;
+    }
+
+    const button = document.createElement("button");
+    const sorted = state.sortBy === column;
+    button.type = "button";
+    button.textContent = column + (sorted ? (state.descending ? " ▼" : " ▲") : "");
+    button.addEventListener("click", () => {
+      if (!sorted) {
+        state.sortBy = column;
+        state.descending = false;
+      } else if (!state.descending) {
+        state.descending = true;
+      } else {
+        state.sortBy = null;
+        state.descending = false;
+      }
+
+      state.offset = 0;
+      fetchPage(state);
+    });
+
+    th.setAttribute(
+      "aria-sort",
+      sorted ? (state.descending ? "descending" : "ascending") : "none",
+    );
+    th.appendChild(button);
+    return th;
+  };
+
+  const buildTable = (state, payload) => {
+    const columns = payload.columns ?? [];
+    const rows = payload.rows ?? [];
+    const sortable = payload.sortable ?? [];
+    const withActions = rows.some((row) => row.actions?.length);
     const table = document.createElement("table");
     const head = document.createElement("tr");
 
-    columns.forEach((column) => {
-      const th = document.createElement("th");
-      th.textContent = column;
-      head.appendChild(th);
-    });
+    columns.forEach((column) => head.appendChild(header(state, column, sortable)));
 
     if (withActions) {
       head.appendChild(document.createElement("th"));
@@ -57,7 +94,7 @@
 
     // Padded to a full page, so a shorter last page doesn't resize the
     // card against its neighbours as you page through.
-    for (let i = rows.length; i < pageSize; i++) {
+    for (let i = rows.length; i < (payload.limit ?? rows.length); i++) {
       const tr = document.createElement("tr");
       tr.className = "table-filler-row";
 
@@ -74,53 +111,90 @@
     return table;
   };
 
-  // The server paginates with forward-only cursors: `payload` is always one
-  // page plus the cursor for the next one, never a total. `state.history`
-  // holds the cursors already visited, so "‹" can step back without the
-  // server needing to support reverse pagination at all.
-  const paint = (state, cursor, payload) => {
-    const columns = payload.columns ?? [];
+  // Without a total, a full page means there may be more, so "›" stays on
+  // until a short page comes back.
+  const paint = (state, payload) => {
     const rows = payload.rows ?? [];
-    const withActions = rows.some((row) => row.actions?.length);
+    const total = payload.total ?? null;
 
-    state.cursor = cursor;
-    state.nextCursor = payload.next_cursor ?? null;
+    state.offset = payload.offset ?? 0;
+    state.limit = payload.limit ?? rows.length;
+    state.search.hidden = !payload.search;
 
-    state.container.replaceChildren(
-      buildTable(columns, rows, withActions, payload.page_size ?? rows.length),
-    );
+    state.container.replaceChildren(buildTable(state, payload));
 
-    state.prev.disabled = state.history.length === 0;
-    state.next.disabled = state.nextCursor == null;
-    state.nav.hidden = state.prev.disabled && state.next.disabled;
+    const shown = rows.length
+      ? `${state.offset + 1}–${state.offset + rows.length}`
+      : "0";
+    state.count.textContent = total == null ? shown : `${shown} of ${total}`;
+
+    state.prev.disabled = state.offset === 0;
+    state.next.disabled =
+      total == null
+        ? rows.length < state.limit
+        : state.offset + rows.length >= total;
   };
 
-  const fetchPage = async (state, cursor) => {
-    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    const response = await fetch(`/_widgets/${state.name}/page${query}`);
-    paint(state, cursor, await response.json());
+  const fetchPage = async (state) => {
+    const params = new URLSearchParams({
+      offset: state.offset,
+      limit: state.limit,
+    });
+
+    if (state.query) params.set("search", state.query);
+    if (state.sortBy) params.set("sort", state.sortBy);
+    if (state.descending) params.set("dir", "desc");
+
+    const response = await fetch(`/_widgets/${state.name}/page?${params}`);
+    paint(state, await response.json());
+  };
+
+  const searchBox = (state) => {
+    const input = document.createElement("input");
+    let timer;
+
+    input.type = "search";
+    input.className = "table-search";
+    input.placeholder = "Search";
+    input.setAttribute("aria-label", "Search");
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.query = input.value.trim();
+        state.offset = 0;
+        fetchPage(state);
+      }, SEARCH_DELAY);
+    });
+
+    return input;
   };
 
   const pager = (state) => {
     const nav = document.createElement("div");
     nav.className = "table-pager";
 
+    const count = document.createElement("span");
+    count.className = "table-count";
+
     const prev = document.createElement("button");
     prev.type = "button";
     prev.textContent = "‹";
-    prev.addEventListener("click", () => fetchPage(state, state.history.pop()));
+    prev.addEventListener("click", () => {
+      state.offset = Math.max(0, state.offset - state.limit);
+      fetchPage(state);
+    });
 
     const next = document.createElement("button");
     next.type = "button";
     next.textContent = "›";
     next.addEventListener("click", () => {
-      state.history.push(state.cursor);
-      fetchPage(state, state.nextCursor);
+      state.offset += state.limit;
+      fetchPage(state);
     });
 
-    nav.append(prev, next);
+    nav.append(count, prev, next);
 
-    state.nav = nav;
+    state.count = count;
     state.prev = prev;
     state.next = next;
 
@@ -132,18 +206,27 @@
       const container = card.querySelector(".card-content");
       container.classList.add("table");
 
-      const state = { container, name: card.dataset.widget, history: [] };
+      const state = {
+        container,
+        name: card.dataset.widget,
+        query: "",
+        sortBy: payload.sort_by ?? null,
+        descending: payload.descending ?? false,
+        offset: 0,
+        limit: payload.limit,
+      };
 
+      state.search = searchBox(state);
+      card.insertBefore(state.search, container);
       card.appendChild(pager(state));
-      paint(state, null, payload);
+      paint(state, payload);
 
       return state;
     },
     // A live update carries no row data, just a signal to refetch the page
-    // currently on screen; the response's own `next_cursor` may differ if
-    // the table shrank, same as `paint` always trusting it.
+    // on screen with the current search, sort and offset.
     replace(state) {
-      fetchPage(state, state.cursor);
+      fetchPage(state);
     },
   });
 })();

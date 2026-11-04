@@ -12,6 +12,7 @@ from dachshund.layout import DEFAULT_PAGE, Column, Page
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
 from dachshund.widgets.base import WIDGETS, Widget
+from dachshund.widgets.query import TableQuery
 from dachshund.runtime.ws import WS_PATH, pumping, websocket
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +23,7 @@ WIDGET_ASSET_PREFIX = f"{STATIC_PREFIX}/widgets"
 
 FALLBACK_NAME = "Dashboard"
 DEFAULT_PAGE_TITLE = "Overview"
+MAX_LIMIT = 100
 
 
 def create_environment() -> Environment:
@@ -51,7 +53,7 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
     """
     kept = await dashboard.events.events(widget.source)
     payload = (
-        await widget.page(kept, None, dashboard.context, dashboard.host_loop)
+        await widget.page(kept, TableQuery(), dashboard.context, dashboard.host_loop)
         if widget.paginated
         else widget.render(kept)
     )
@@ -211,17 +213,43 @@ async def widget_style(request: web.Request) -> web.FileResponse:
     return await widget_file(request, "style")
 
 
+def table_query(request: web.Request) -> TableQuery:
+    """The `TableQuery` a request's query string asks for."""
+    params = request.query
+    limit = _integer(params.get("limit"))
+
+    return TableQuery(
+        search=params.get("search") or None,
+        sort_by=params.get("sort") or None,
+        descending=params.get("dir") == "desc",
+        offset=max(0, _integer(params.get("offset"))),
+        limit=min(limit, MAX_LIMIT) if limit > 0 else None,
+    )
+
+
+def _integer(value: str | None) -> int:
+    try:
+        return int(value or 0)
+    except ValueError:
+        return 0
+
+
 async def widget_page(request: web.Request) -> web.Response:
-    """One page of a paginated widget's current rows, after `?cursor=`."""
+    """One page of a paginated widget's current rows.
+
+    `?search=`, `?sort=`, `?dir=desc`, `?offset=` and `?limit=` make up the
+    widget's `TableQuery`.
+    """
     dashboard = request.app[DASHBOARD]
     widget = dashboard.widgets.get(request.match_info["name"])
 
     if widget is None or not widget.paginated:
         raise web.HTTPNotFound()
 
-    cursor = request.query.get("cursor")
     kept = await dashboard.events.events(widget.source)
-    payload = await widget.page(kept, cursor, dashboard.context, dashboard.host_loop)
+    payload = await widget.page(
+        kept, table_query(request), dashboard.context, dashboard.host_loop
+    )
     resolve_row_actions(dashboard.actions, widget, payload)
 
     return web.json_response(payload)

@@ -39,11 +39,13 @@ A dashboard with persisted widgets also needs a `storage`, such as `SQLiteStorag
 Actions and loaders are plain functions, called with whatever `ctx` the test needs:
 
 ```python
+from dachshund import TableQuery
+
 from myapp.dashboard.loaders import load_users
 
 
 async def test_load_users__expect_a_first_page():
-    rows, next_cursor = await load_users({"db": FakeDatabase()}, None, 5)
+    rows, total = await load_users({"db": FakeDatabase()}, TableQuery(limit=5))
 
     assert len(rows) == 5
 ```

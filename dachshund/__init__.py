@@ -30,6 +30,7 @@ from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.widgets.number.number import Number
 from dachshund.widgets.persistable import PersistableWidget
+from dachshund.widgets.query import TableQuery
 from dachshund.widgets.table.table import Table
 from dachshund.widgets.text.text import Text
 
@@ -48,6 +49,7 @@ __all__ = [
     "Row",
     "Runtime",
     "Table",
+    "TableQuery",
     "Text",
     "TimeSeriesChart",
     "Widget",

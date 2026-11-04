@@ -69,20 +69,58 @@
   color: var(--offline);
 }
 
+.table-search {
+  width: 50%;
+  margin-top: 12px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+
+.table-search[hidden] {
+  display: none;
+}
+
+.table-search:focus {
+  outline: none;
+  border-color: var(--text-dim);
+}
+
+.card-content.table th button {
+  appearance: none;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.card-content.table th button:hover,
+.card-content.table th[aria-sort="ascending"] button,
+.card-content.table th[aria-sort="descending"] button {
+  color: var(--text);
+}
+
+.table-count {
+  margin-right: auto;
+}
+
 .table-pager {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 10px;
   margin-top: 14px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
-}
-
-/* Specificity ties the [hidden] UA rule otherwise, letting flex win. */
-.table-pager[hidden] {
-  display: none;
 }
 
 .table-pager button {

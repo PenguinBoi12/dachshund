@@ -6,6 +6,7 @@ from typing import Any, ClassVar, Sequence
 
 from dachshund.actions import Context
 from dachshund.storage.events import Event
+from dachshund.widgets.query import TableQuery
 from dachshund.widgets.value import numeric
 
 logger = logging.getLogger("dachshund")
@@ -147,15 +148,15 @@ class Widget:
     async def page(
         self,
         events: Sequence[Event],
-        cursor: str | None,
+        query: TableQuery,
         context: Context,
         host_loop: asyncio.AbstractEventLoop | None = None,
     ) -> dict[str, Any]:
-        """One page of this widget's rows, starting after `cursor`.
+        """One page of this widget's rows, as `query` asks for.
 
-        `cursor` is `None` for the first page. `context` and `host_loop`
-        only matter to a widget that calls out to a host-supplied callable
-        to build it. Only called on a `paginated` widget.
+        `context` and `host_loop` only matter to a widget that calls out to a
+        host-supplied callable to build it. Only called on a `paginated`
+        widget.
         """
         raise NotImplementedError
 

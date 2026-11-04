@@ -152,7 +152,7 @@ class EventStore:
     def _select(self, source: str) -> list[Event]:
         raw = self._connection.execute(
             "SELECT payload, at FROM events "
-            "WHERE source = ? ORDER BY at DESC LIMIT ?",
+            "WHERE source = ? ORDER BY at DESC, id DESC LIMIT ?",
             (source, self.limit),
         ).fetchall()
 
@@ -166,7 +166,7 @@ class EventStore:
             Event(
                 source, json.loads(payload), datetime.fromtimestamp(at, tz=timezone.utc)
             )
-            for payload, at in raw
+            for payload, at in reversed(raw)
         ] + [
             Event(
                 source,

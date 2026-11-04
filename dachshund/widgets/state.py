@@ -9,10 +9,9 @@ from dachshund.widgets.persistable import PersistableWidget
 class KeyedState:
     """A dict of entries, keyed by string, with staleness tracking.
 
-    `sequence` names the order each entry was first seen in, once assigned
-    it never changes, an update doesn't move it and nothing else being
-    added or removed does either. It's what a cursor into this state is
-    built from, so paging through it stays correct even past a deletion.
+    `sequence` names the order each entry was first seen in. Once assigned
+    it never changes: an update doesn't move it, and neither does another
+    entry being added or removed.
     """
 
     entries: dict[str, Any] = field(default_factory=dict)

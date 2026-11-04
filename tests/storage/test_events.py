@@ -354,3 +354,23 @@ async def test_compact_on_a_freshly_booted_machine__expect_the_first_call_to_run
     )
 
     assert rows == [(1,)]
+
+
+@pytest.mark.asyncio
+async def test_events_emitted_in_the_same_instant__expect_emission_order(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db")
+    at = datetime.now(tz=timezone.utc)
+
+    await store.append(
+        [Event("latency", {"value": value}, at=at) for value in range(5)]
+    )
+
+    assert [event.payload["value"] for event in await store.events("latency")] == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]

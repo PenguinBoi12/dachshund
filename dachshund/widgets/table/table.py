@@ -1,16 +1,27 @@
 import asyncio
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import KW_ONLY, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, ClassVar, Sequence
 
 from dachshund.actions import Context, run
 from dachshund.storage.events import Event
+from dachshund.widgets.query import TableQuery
 from dachshund.widgets.state import KeyedWidget
 
 RESERVED = ("_delete",)
 
-PageResult = tuple[list[dict[str, Any]], str | None]
-Loader = Callable[[Context, str | None, int], PageResult | Awaitable[PageResult]]
+PageResult = tuple[list[dict[str, Any]], int | None]
+
+
+Loader = Callable[[Context, TableQuery], PageResult | Awaitable[PageResult]]
+
+
+def _sort_key(value: Any) -> tuple[int, Any]:
+    """Numbers before text, each in its own order, so mixed columns still sort."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return (0, value)
+
+    return (1, str(value).lower())
 
 
 def _fields(payload: dict[str, Any]) -> dict[str, Any]:
@@ -22,7 +33,7 @@ def _fields(payload: dict[str, Any]) -> dict[str, Any]:
 
 @dataclass
 class Table(KeyedWidget):
-    """A paginated table, one row per kept event.
+    """A searchable, sortable table, one row per kept event.
 
     ## Example
 
@@ -38,7 +49,10 @@ class Table(KeyedWidget):
     - `key` (`str`) - The field identifying a row across events. An event
       whose key matches a kept row replaces it. Defaults to `None`, every
       event is a new row.
-    - `page_size` (`int`) - Rows per page. Defaults to `5`.
+    - `page_size` (`int`) - Rows per page. Defaults to `10`.
+    - `search` (`bool`) - Shows a search box. Defaults to `True`.
+    - `sortable` (`list[str]`) - Columns sorted by clicking their header.
+      Defaults to every shown column.
     - `loader` (`Loader`) - Fetches rows from data dachshund doesn't own,
       see [Loader](#loader). Defaults to `None`.
     - `persist` (`bool`) - Keeps rows across restarts. Needs `key` and the
@@ -67,35 +81,37 @@ class Table(KeyedWidget):
 
     ## Loader
 
-    A function of `(ctx, cursor, page_size)`, sync or async, returning
-    `(rows, next_cursor)`. `cursor` is `None` for the first page and
-    `next_cursor` is `None` on the last one. It's called every time a page
-    is shown.
+    A function of `(ctx, query)`, sync or async, returning `(rows, total)`.
+    `query` is a [TableQuery][dachshund.TableQuery]: apply its search, sort,
+    offset and limit, and return that page. `total` is the number of rows
+    matching the search, or `None` when counting them is too costly. It's
+    called every time a page is shown.
 
     ```python
-    def load_users(ctx, cursor, page_size):
-        start = int(cursor or 0)
-        rows = ctx["db"].users(offset=start, limit=page_size)
-        more = len(rows) == page_size
-        return rows, str(start + page_size) if more else None
+    def load_users(ctx, query):
+        users = ctx["db"].users(search=query.search, order_by=query.sort_by)
+        page = users[query.offset : query.offset + query.limit]
+
+        return page, len(users)
 
     dachshund.row(Table("users", columns=["name", "email"], loader=load_users))
     ```
 
     ## Pagination
 
-    Pages move forward by cursor. A kept table's cursor is the last row's
-    key, or its position without one, and falls back to the first page if
-    that row is gone. With `persist=True`, the cursor is the row's insertion
-    order, which stays valid through any update or removal.
+    Pages move by offset, showing "11-20 of 412". Without a total, the next
+    page is offered while a full page comes back. A live update refreshes the
+    page shown, so rows can shift across pages as they change.
     """
 
     _: KW_ONLY
 
     columns: list[str]
     key: str | None = None
-    page_size: int = 5
+    page_size: int = 10
     loader: Loader | None = None
+    search: bool = True
+    sortable: list[str] | None = field(default=None)
 
     type: ClassVar[str] = "table"
     op: ClassVar[str] = "replace"
@@ -110,6 +126,13 @@ class Table(KeyedWidget):
         if self.persist and self.key is None:
             raise ValueError(
                 f"{self.name!r} wants to persist, but has no key to identify a row by."
+            )
+
+        unknown = [c for c in self.sortable or [] if c not in self.columns]
+
+        if unknown:
+            raise ValueError(
+                f"{self.name!r} sorts by columns it doesn't show: {', '.join(unknown)}."
             )
 
         if self.loader is not None and self.persist:
@@ -147,88 +170,78 @@ class Table(KeyedWidget):
 
                 rows.append({"fields": fields})
 
-        shown = [column for column in self.columns if not column.startswith("_")]
+        return {"columns": self.shown, "rows": rows}
 
-        return {"columns": shown, "rows": rows}
+    @property
+    def shown(self) -> list[str]:
+        """The columns drawn, hidden `_` ones left out."""
+        return [column for column in self.columns if not column.startswith("_")]
 
-    def _row_cursor(self, row: dict[str, Any], index: int) -> str:
-        """The cursor identifying `row`.
+    @property
+    def sortable_columns(self) -> list[str]:
+        """The columns whose header sorts the table."""
+        return self.shown if self.sortable is None else list(self.sortable)
 
-        A persisting table's cursor is the row's `self.state.sequence`
-        (`__post_init__` guarantees `key` is set whenever `persist` is). A
-        non-persisting table's cursor is its own key value, or its
-        position if it has none.
-        """
-        if self.persist and self.key is not None:
-            identity = str(row["fields"].get(self.key))
-            return str(self.state.sequence.get(identity, index))
+    def query(
+        self, rows: list[dict[str, Any]], query: TableQuery
+    ) -> list[dict[str, Any]]:
+        """`rows` matching `query`'s search, in its order. No page is cut."""
+        if query.search:
+            needle = query.search.lower()
+            rows = [
+                row
+                for row in rows
+                if any(
+                    needle in str(row["fields"].get(column, "")).lower()
+                    for column in self.shown
+                )
+            ]
 
-        if self.key is not None:
-            return str(row["fields"].get(self.key, index))
+        if query.sort_by in self.sortable_columns:
+            column = query.sort_by
+            present = [row for row in rows if row["fields"].get(column) is not None]
+            missing = [row for row in rows if row["fields"].get(column) is None]
+            present.sort(key=lambda row: _sort_key(row["fields"][column]))
 
-        return str(index)
+            if query.descending:
+                present.reverse()
 
-    def _index_after(self, rows: list[dict[str, Any]], cursor: str | None) -> int:
-        if cursor is None:
-            return 0
+            rows = present + missing
 
-        if self.persist:
-            try:
-                threshold = int(cursor)
-            except ValueError:
-                return 0
-
-            for index, row in enumerate(rows):
-                if int(self._row_cursor(row, index)) > threshold:
-                    return index
-
-            return len(rows)
-
-        for index, row in enumerate(rows):
-            if self._row_cursor(row, index) == cursor:
-                return index + 1
-
-        # a stale/unknown cursor (its row is gone): start over
-        return 0
+        return rows
 
     async def page(
         self,
         events: Sequence[Event],
-        cursor: str | None,
+        query: TableQuery,
         context: Context,
         host_loop: asyncio.AbstractEventLoop | None = None,
     ) -> dict[str, Any]:
-        """One page of this table's rows, starting after `cursor`.
+        """One page of this table's rows, as `query` asks for.
 
-        `cursor` is `None` for the first page. A `loader` answers directly,
-        sync or async; see `run()`.
+        A `loader` answers directly, sync or async; see `run()`.
         """
+        limit = query.limit or self.page_size
+        query = replace(query, limit=limit)
+
         if self.loader is not None:
-            rows, next_cursor = await run(
-                self.loader, context, cursor, self.page_size, host_loop=host_loop
-            )
-
-            return {
-                "columns": [c for c in self.columns if not c.startswith("_")],
-                "rows": [{"fields": _fields(row)} for row in rows],
-                "next_cursor": next_cursor,
-                "page_size": self.page_size,
-            }
-
-        built = self.render(events)
-        rows = built["rows"]
-        start = self._index_after(rows, cursor)
-        page_rows = rows[start : start + self.page_size]
-        end = start + len(page_rows)
-        next_cursor = (
-            self._row_cursor(page_rows[-1], end - 1) if end < len(rows) else None
-        )
+            loaded, total = await run(self.loader, context, query, host_loop=host_loop)
+            rows = [{"fields": _fields(row)} for row in loaded]
+        else:
+            matching = self.query(self.render(events)["rows"], query)
+            total = len(matching)
+            rows = matching[query.offset : query.offset + limit]
 
         return {
-            "columns": built["columns"],
-            "rows": page_rows,
-            "next_cursor": next_cursor,
-            "page_size": self.page_size,
+            "columns": self.shown,
+            "rows": rows,
+            "total": total,
+            "offset": query.offset,
+            "limit": limit,
+            "sortable": self.sortable_columns,
+            "search": self.search,
+            "sort_by": query.sort_by,
+            "descending": query.descending,
         }
 
     def accumulate(self, event: Event) -> None:
