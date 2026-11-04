@@ -79,19 +79,20 @@ async def cards(
     dashboard: Dashboard, page: str = DEFAULT_PAGE
 ) -> list[list[dict[str, Any]]]:
     """Build the cards of `page`: a list per row, of `{"span", "cards"}` per column."""
-    return [
-        [
-            {
-                "span": span,
-                "cards": [
-                    await card(dashboard, dashboard.widgets[name])
-                    for name in column.names
-                ],
-            }
-            for column, span in zip(row.columns, row.spans())
-        ]
-        for row in dashboard.layout(page)
-    ]
+    rows = []
+
+    for row in dashboard.layout(page):
+        columns = []
+
+        for column, span in zip(row.columns, row.spans()):
+            cards = [
+                await card(dashboard, dashboard.widgets[name]) for name in column.names
+            ]
+            columns.append({"span": span, "cards": cards})
+
+        rows.append(columns)
+
+    return rows
 
 
 def page_names(dashboard: Dashboard) -> list[str]:
