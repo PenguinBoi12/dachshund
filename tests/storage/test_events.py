@@ -264,12 +264,12 @@ async def test_compact_of_a_bucket_still_open__expect_it_left_until_it_closes(
 
     await store.append([Event("latency", {"value": 10}, at=early)])
     store.retention = time.time() - (bucket_start + 30)
-    store._last_compact = 0.0
+    store._last_compact = float("-inf")
     await store.compact()
 
     await store.append([Event("latency", {"value": 20}, at=late)])
     store.retention = time.time() - (bucket_start + 65)
-    store._last_compact = 0.0
+    store._last_compact = float("-inf")
     await store.compact()
 
     reopened = db.connect(str(path))
