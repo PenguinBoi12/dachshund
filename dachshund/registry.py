@@ -3,22 +3,14 @@ import atexit
 import logging
 import queue
 import threading
-from contextlib import suppress
+from contextlib import AbstractContextManager, suppress
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from aiohttp import web
 
 from dachshund.actions import Action, Context, make_action
-from dachshund.layout import (
-    DEFAULT_PAGE,
-    Column,
-    Page,
-    Row,
-    build_row,
-    row_names,
-    unplace,
-)
+from dachshund.layout import DEFAULT_PAGE, Builder, Column, Page, Row
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.storage import db
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
@@ -48,7 +40,7 @@ class Dashboard:
 
     ```python
     dashboard = Dashboard("Ada", description="Code Society's Matrix bot")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
     dashboard.start()
     ```
 
@@ -91,6 +83,7 @@ class Dashboard:
         self.actions: dict[str, Action] = {}
         self.pages: dict[str, Page] = {}
         self.placements: dict[str, str] = {}
+        self._builders: dict[str, Builder] = {}
         self.dropped = 0
         self._dropping = False
 
@@ -232,7 +225,7 @@ class Dashboard:
 
         ```python
         page = Page("errors", title="Errors")
-        page.row(BarChart("errors", x="code"))
+        page.add(BarChart("errors", x="code"))
         dashboard.include(page)
         ```
         """
@@ -296,52 +289,35 @@ class Dashboard:
 
         return existing
 
-    def column(self, *widgets: Widget | str) -> Column:
-        """Stack widgets top to bottom, for use in a `row()`."""
-        return Column([self._take(widget, None) for widget in widgets])
-
-    def row(
-        self,
-        *items: Widget | str | Column,
-        widths: Iterable[int] | None = None,
-        page: str = DEFAULT_PAGE,
-    ) -> None:
-        """Lay widgets out side by side, in a row of their own.
-
-        Widgets new to the dashboard are added on `page`. Widgets already
-        on it move out of their old row.
+    def row(self, *, page: str = DEFAULT_PAGE) -> AbstractContextManager[Row]:
+        """Open a row on `page`, see [Page.row][dachshund.layout.Page.row].
 
         ## Example
 
         ```python
-        dashboard.row(latency, dashboard.column(errors, users), widths=(2, 1))
+        with dashboard.row():
+            dashboard.add(Number("errors"))
+            dashboard.add(TimeSeriesChart("latency"))
         ```
+        """
+        return self._builder(page).row()
+
+    def column(
+        self, *, span: int | None = None, page: str = DEFAULT_PAGE
+    ) -> AbstractContextManager[Column]:
+        """Open a column inside a row on `page`, see [Page.column][dachshund.layout.Page.column]."""
+        return self._builder(page).column(span)
+
+    def add(self, widget: Widget, *, page: str = DEFAULT_PAGE) -> None:
+        """Put a widget in the innermost block open on `page`.
+
+        See [Page.add][dachshund.layout.Page.add].
 
         ## Options
 
-        - `widths` (`tuple[int, ...]`) - Each item's share of the row, see
-          [Row][dachshund.Row]. Defaults to equal shares.
-        - `page` (`str`) - The page the row goes on. Defaults to `"default"`.
+        - `page` (`str`) - The page it goes on. Defaults to `"default"`.
         """
-        target = self.page(page)
-
-        if target.tabs:
-            raise ValueError(f"Page {page!r} has tabs, add rows to one.")
-
-        row = build_row(items, widths, lambda item: self._take(item, page))
-        names = row_names(row)
-        elsewhere = [name for name in names if self.widget_page(name, page) != page]
-
-        if elsewhere:
-            raise ValueError(
-                f"row() names widgets on another page: {', '.join(elsewhere)}."
-            )
-
-        unplace(target.rows, names)
-        target.rows.append(row)
-
-        for name in names:
-            self.placements[name] = page
+        self._builder(page).add(widget)
 
     def widget_page(self, name: str, default: str = DEFAULT_PAGE) -> str:
         """The page a widget appears on."""
@@ -354,7 +330,7 @@ class Dashboard:
 
         ```python
         dashboard.layout("requests")
-        # [Row(["latency", Column(["errors", "users"])], (2, 1))]
+        # [Row([Column(["errors", "users"], span=4), Column(["latency"])])]
         ```
         """
         declared = self.pages.get(page)
@@ -383,18 +359,21 @@ class Dashboard:
         if page is not None:
             self.placements[widget.name] = page
 
-    def _take(self, item: Widget | str, page: str | None) -> str:
-        """The name of `item`, adding it on `page` if it's a new widget."""
-        if isinstance(item, Widget):
-            if self.widgets.get(item.name) is not item:
-                self._register(item, page)
+    def _unregister(self, name: str) -> None:
+        self.widgets.pop(name, None)
+        self.placements.pop(name, None)
 
-            return item.name
+    def _builder(self, page: str) -> Builder:
+        target = self.page(page)
 
-        if item not in self.widgets:
-            raise ValueError(f"No widgets named: {item}.")
+        if target.path not in self._builders:
+            self._builders[target.path] = Builder(
+                target,
+                lambda on, widget: self._register(widget, on.path),
+                lambda on, name: self._unregister(name),
+            )
 
-        return item
+        return self._builders[target.path]
 
     def _create_app(self) -> web.Application:
         """Build the application that serves this dashboard."""
@@ -579,16 +558,8 @@ def page(name: str, **options: Any) -> Page:
     return default().page(name, **options)
 
 
-def column(*widgets: Widget | str) -> Column:
-    """Stack widgets, on the default dashboard.
-
-    Takes what [Dashboard.column][dachshund.registry.Dashboard.column] does.
-    """
-    return default().column(*widgets)
-
-
-def row(*items: Widget | str | Column, **options: Any) -> None:
-    """Group widgets into one row, on the default dashboard.
+def row(**options: Any) -> AbstractContextManager[Row]:
+    """Open a row, on the default dashboard.
 
     Takes what [Dashboard.row][dachshund.registry.Dashboard.row] does.
 
@@ -597,10 +568,36 @@ def row(*items: Widget | str | Column, **options: Any) -> None:
     ```python
     import dachshund
 
-    dachshund.row("latency", "errors", page="requests")
+    with dachshund.row():
+        dachshund.add(dachshund.Number("errors"))
+        dachshund.add(dachshund.TimeSeriesChart("latency"))
     ```
     """
-    default().row(*items, **options)
+    return default().row(**options)
+
+
+def column(**options: Any) -> AbstractContextManager[Column]:
+    """Open a column inside a row, on the default dashboard.
+
+    Takes what [Dashboard.column][dachshund.registry.Dashboard.column] does.
+    """
+    return default().column(**options)
+
+
+def add(widget: Widget, **options: Any) -> None:
+    """Put a widget in the innermost open block, on the default dashboard.
+
+    Takes what [Dashboard.add][dachshund.registry.Dashboard.add] does.
+
+    ## Example
+
+    ```python
+    import dachshund
+
+    dachshund.add(dachshund.Number("errors"))
+    ```
+    """
+    default().add(widget, **options)
 
 
 def _repeated(names: list[str]) -> list[str]:

@@ -1,49 +1,55 @@
-from dataclasses import dataclass
-from typing import Any, Callable, Iterable
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Iterator
 
 from dachshund.actions import Action, make_action
 from dachshund.widgets.base import Widget
 
 DEFAULT_PAGE = "default"
+COLUMNS = 12
 
 
 @dataclass
 class Column:
-    """Widgets stacked top to bottom, taking one slot of a row."""
+    """Widgets stacked top to bottom in one column of a row.
 
-    names: list[str]
+    ## Options
+
+    - `names` (`list[str]`) - The widgets, top to bottom.
+    - `span` (`int`) - Columns wide, out of 12. Defaults to `None`, an even
+      share of what the row's other columns leave.
+    """
+
+    names: list[str] = field(default_factory=list)
+    span: int | None = None
 
 
 @dataclass
 class Row:
-    """Widgets and columns side by side, left to right.
+    """Columns side by side on a 12-column grid."""
 
-    ## Options
+    columns: list[Column] = field(default_factory=list)
 
-    - `items` (`list[str | Column]`) - Widget names and columns, in order.
-    - `widths` (`tuple[int, ...]`) - Each item's share of the row, `(2, 1)` for
-      two thirds then one third. Defaults to `None`, equal shares.
-    """
+    def spans(self) -> list[int]:
+        """Each column's width out of 12. Unsized columns share what's left evenly."""
+        fixed = sum(column.span or 0 for column in self.columns)
+        free = [
+            index for index, column in enumerate(self.columns) if column.span is None
+        ]
+        share, extra = divmod(max(COLUMNS - fixed, len(free)), len(free) or 1)
 
-    items: list[str | Column]
-    widths: tuple[int, ...] | None = None
+        return [
+            column.span or share + (1 if free.index(index) < extra else 0)
+            for index, column in enumerate(self.columns)
+        ]
 
-    def __post_init__(self) -> None:
-        if self.widths is None:
-            return
+    def check(self) -> None:
+        fixed = sum(column.span or 0 for column in self.columns)
 
-        if len(self.widths) != len(self.items):
+        if fixed > COLUMNS:
             raise ValueError(
-                f"widths has {len(self.widths)} values for "
-                f"{len(self.items)} items in the row."
+                f"The row's columns span {fixed} columns, the grid has 12."
             )
-
-        if any(width < 1 for width in self.widths):
-            raise ValueError("Every width must be at least 1.")
-
-    def weight(self, index: int) -> int:
-        """The share of the row the item at `index` takes."""
-        return self.widths[index] if self.widths else 1
 
 
 def names_of(items: Iterable[Widget | str]) -> list[str]:
@@ -52,53 +58,120 @@ def names_of(items: Iterable[Widget | str]) -> list[str]:
 
 
 def row_names(row: Row) -> list[str]:
-    """Every widget name in `row`, columns flattened."""
-    return [
-        name
-        for item in row.items
-        for name in (item.names if isinstance(item, Column) else [item])
-    ]
+    """Every widget name in `row`, top to bottom in each column, left to right."""
+    return [name for column in row.columns for name in column.names]
 
 
-def build_row(
-    items: Iterable[Widget | str | Column],
-    widths: Iterable[int] | None,
-    take: Callable[[Widget | str], str],
-) -> Row:
-    """A row from widgets, names and columns, `take` naming each widget."""
-    items = list(items)
-    checked = Row(["" for _ in items], tuple(widths) if widths is not None else None)
-
-    return Row(
-        [item if isinstance(item, Column) else take(item) for item in items],
-        checked.widths,
-    )
+Register = Callable[["Page", Widget], None]
+Unregister = Callable[["Page", str], None]
 
 
-def unplace(rows: list[Row], names: Iterable[str]) -> None:
-    """Remove `names` from `rows`, dropping columns and rows left empty."""
-    gone = set(names)
+class Builder:
+    """The `with` blocks open on a page, and where `add()` puts a widget.
 
-    for row in list(rows):
-        kept: list[str | Column] = []
-        weights: list[int] = []
+    Widgets added inside a row are registered when the row closes, all or
+    none, so a row that fails leaves nothing behind.
+    """
 
-        for index, item in enumerate(row.items):
-            if isinstance(item, Column):
-                item = Column([name for name in item.names if name not in gone])
-                keep = bool(item.names)
-            else:
-                keep = item not in gone
+    def __init__(
+        self, root: "Page", register: Register, unregister: Unregister
+    ) -> None:
+        self.root = root
+        self.register = register
+        self.unregister = unregister
+        self.open: list[Page | Row | Column] = []
+        self.pending: list[Widget] = []
 
-            if keep:
-                kept.append(item)
-                weights.append(row.weight(index))
+    @contextmanager
+    def row(self) -> Iterator[Row]:
+        if isinstance(self._inner(), (Row, Column)):
+            raise ValueError("A row can't be opened inside another row.")
 
-        if not kept:
-            rows.remove(row)
+        page = self._page()
+
+        if page.tabs:
+            raise ValueError(f"Page {page.path!r} has tabs, put rows on one.")
+
+        row = Row()
+        self.open.append(row)
+
+        try:
+            yield row
+        finally:
+            self.open.pop()
+            pending, self.pending = self.pending, []
+
+        row.check()
+        self._commit(page, pending)
+
+        if row.columns:
+            page.rows.append(row)
+
+    @contextmanager
+    def column(self, span: int | None = None) -> Iterator[Column]:
+        row = self._inner()
+
+        if not isinstance(row, Row):
+            raise ValueError("A column goes directly inside a row.")
+
+        if span is not None and not 1 <= span <= COLUMNS:
+            raise ValueError(f"A column's span is between 1 and {COLUMNS}.")
+
+        column = Column(span=span)
+        self.open.append(column)
+
+        try:
+            yield column
+        finally:
+            self.open.pop()
+
+        row.columns.append(column)
+
+    @contextmanager
+    def tab(self, name: str, title: str | None = None) -> Iterator["Page"]:
+        if isinstance(self._inner(), (Row, Column)):
+            raise ValueError("A tab can't be opened inside a row.")
+
+        tab = self._page()._new_tab(name, title)
+        self.open.append(tab)
+
+        try:
+            yield tab
+        finally:
+            self.open.pop()
+
+    def add(self, widget: Widget) -> None:
+        inner = self._inner()
+
+        if isinstance(inner, Column):
+            inner.names.append(widget.name)
+            self.pending.append(widget)
+        elif isinstance(inner, Row):
+            inner.columns.append(Column([widget.name]))
+            self.pending.append(widget)
         else:
-            row.items = kept
-            row.widths = tuple(weights) if row.widths else None
+            page = self._page()
+            self._commit(page, [widget])
+            page.rows.append(Row([Column([widget.name])]))
+
+    def _page(self) -> "Page":
+        pages = [block for block in self.open if isinstance(block, Page)]
+        return pages[-1] if pages else self.root
+
+    def _inner(self) -> "Page | Row | Column | None":
+        return self.open[-1] if self.open else None
+
+    def _commit(self, page: "Page", widgets: list[Widget]) -> None:
+        registered: list[str] = []
+
+        try:
+            for widget in widgets:
+                self.register(page, widget)
+                registered.append(widget.name)
+        except Exception:
+            for name in registered:
+                self.unregister(page, name)
+            raise
 
 
 class Page:
@@ -112,12 +185,13 @@ class Page:
     ```python
     page = Page("overview", title="Overview")
 
-    page.row(Text("summary"))
-    page.row(
-        TimeSeriesChart("latency"),
-        page.column(Number("errors"), Number("users")),
-        widths=(2, 1),
-    )
+    page.add(Text("summary"))
+
+    with page.row():
+        with page.column(span=4):
+            page.add(Number("errors"))
+            page.add(Number("users"))
+        page.add(TimeSeriesChart("latency"))
 
     @page.action("flush", label="Flush cache")
     def flush(ctx): ...
@@ -133,12 +207,15 @@ class Page:
 
     ## Layout
 
-    - `row()` puts widgets side by side, equally unless given `widths`. A row
-      with one widget takes the full width.
-    - `column()` stacks widgets top to bottom, in one slot of a row.
+    A page is rows on a 12-column grid, laid out with `with` blocks.
+    `add()` puts a widget in the innermost open block:
 
-    Rows show in the order they were made. `row()` and `column()` take new
-    widgets, or ones already on the page, which move out of their old row.
+    - in a `column()`, stacked under the widgets already there
+    - in a `row()`, as a column of its own
+    - anywhere else, as a full-width row
+
+    A column's `span` is its width out of 12. Columns without one share what's
+    left evenly.
 
     ## Tabs
 
@@ -158,41 +235,58 @@ class Page:
         self.actions: dict[str, Action] = {}
         self.tabs: dict[str, Page] = {}
         self.included = False
+        self._builder = Builder(
+            self, lambda page, widget: page._register(widget), Page._unregister
+        )
 
     @property
     def path(self) -> str:
         """Where the page lives, `"parent/tab"` for a tab."""
         return f"{self.parent.path}/{self.name}" if self.parent else self.name
 
-    def column(self, *widgets: Widget | str) -> Column:
-        """Stack widgets top to bottom, for use in a `row()`."""
-        return Column([self._take(widget) for widget in widgets])
+    def row(self) -> AbstractContextManager[Row]:
+        """Open a row: widgets added until the block ends sit side by side.
 
-    def row(
-        self, *items: Widget | str | Column, widths: Iterable[int] | None = None
-    ) -> None:
-        """Lay widgets of this page out side by side, in a row of their own.
+        ## Example
 
-        ## Options
-
-        - `widths` (`tuple[int, ...]`) - Each item's share of the row, see
-          [Row][dachshund.Row]. Defaults to equal shares.
+        ```python
+        with page.row():
+            page.add(Number("errors"))
+            page.add(TimeSeriesChart("latency"))
+        ```
         """
-        self._check_open()
+        return self._builder.row()
 
-        row = build_row(items, widths, self._take)
-        unplace(self.rows, row_names(row))
-        self.rows.append(row)
-
-    def tab(self, name: str, *, title: str | None = None) -> "Page":
-        """Add a tab, a page nested under this one, and return it.
+    def column(self, *, span: int | None = None) -> AbstractContextManager[Column]:
+        """Open a column inside a row: widgets added until the block ends stack.
 
         ## Options
 
-        - `name` (`str`) - The tab's URL, `/<page>/<name>`. Required.
+        - `span` (`int`) - Columns wide, out of 12. Defaults to an even share
+          of what the row's other columns leave.
+        """
+        return self._builder.column(span)
+
+    def tab(
+        self, name: str, *, title: str | None = None
+    ) -> AbstractContextManager["Page"]:
+        """Open a tab: rows and widgets added until the block ends go on it.
+
+        A tab is a page nested under this one, at `/<page>/<name>`.
+
+        ## Options
+
+        - `name` (`str`) - The tab's URL. Required.
         - `title` (`str`) - Shown in the sidebar. Defaults to `name`, underscores
           as spaces.
         """
+        return self._builder.tab(name, title)
+
+    def add(self, widget: Widget) -> None:
+        """Put a widget in the innermost open block, see [Layout](#layout)."""
+        self._builder.add(widget)
+
+    def _new_tab(self, name: str, title: str | None) -> "Page":
         self._check_open()
 
         if self.widgets:
@@ -211,7 +305,7 @@ class Page:
     def action(
         self, name: str, *, label: str | None = None, confirm: bool = False
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Register an action, see [Dashboard.action][dachshund.Dashboard.action]."""
+        """Register an action, see [Dashboard.action][dachshund.registry.Dashboard.action]."""
 
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
             self._check_open()
@@ -241,18 +335,8 @@ class Page:
 
         self.widgets[widget.name] = widget
 
-    def _take(self, item: Widget | str) -> str:
-        """The name of `item`, registering it if it's a widget new to the page."""
-        if isinstance(item, Widget):
-            if self.widgets.get(item.name) is not item:
-                self._register(item)
-
-            return item.name
-
-        if item not in self.widgets:
-            raise ValueError(f"Not on page {self.path!r}: {item}.")
-
-        return item
+    def _unregister(self, name: str) -> None:
+        self.widgets.pop(name, None)
 
     def _check_open(self) -> None:
         if self.included:

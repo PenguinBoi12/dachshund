@@ -17,7 +17,7 @@ class LineChart(Widget):
     ## Example
 
     ```python
-    dachshund.row(LineChart("throughput", x="requests", y="latency"))
+    dachshund.add(LineChart("throughput", x="requests", y="latency"))
     dachshund.emit("throughput", requests=120, latency=96)
     ```
 

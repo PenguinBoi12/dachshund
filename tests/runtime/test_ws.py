@@ -89,9 +89,9 @@ class PartiallyFlakyStorage:
 @pytest.mark.asyncio
 async def test_updates__expect_one_per_widget_watching_the_source() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
-    dashboard.row(TimeSeriesChart("also_latency", source="latency"))
-    dashboard.row(TimeSeriesChart("errors"))
+    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("also_latency", source="latency"))
+    dashboard.add(TimeSeriesChart("errors"))
 
     messages = await updates(dashboard, [Event("latency", {"value": 96})])
 
@@ -103,7 +103,7 @@ async def test_updates__expect_one_per_widget_watching_the_source() -> None:
 @pytest.mark.asyncio
 async def test_updates_of_an_unwatched_source__expect_nothing() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
 
     assert await updates(dashboard, [Event("errors")]) == []
 
@@ -111,7 +111,7 @@ async def test_updates_of_an_unwatched_source__expect_nothing() -> None:
 @pytest.mark.asyncio
 async def test_emit_while_connected__expect_the_update_pushed() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         async with client.ws_connect(WS_PATH) as page:
@@ -130,7 +130,7 @@ async def test_emit_while_connected__expect_the_update_pushed() -> None:
 @pytest.mark.asyncio
 async def test_emit_while_two_pages_are_open__expect_both_told() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         async with client.ws_connect(WS_PATH) as one:
@@ -159,7 +159,7 @@ async def test_connect__expect_the_page_tracked_then_forgotten() -> None:
 @pytest.mark.asyncio
 async def test_emit_of_a_batch__expect_one_message_carrying_them_all() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         async with client.ws_connect(WS_PATH) as page:
@@ -202,7 +202,7 @@ async def test_broadcast_of_nothing__expect_no_send() -> None:
 @pytest.mark.asyncio
 async def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(BarChart("commands", x="name"))
+    dashboard.add(BarChart("commands", x="name"))
 
     for name in ("/ban", "/help", "/ban"):
         dashboard.emit("commands", name=name, value=1)
@@ -226,8 +226,8 @@ async def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> 
 @pytest.mark.asyncio
 async def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
-    dashboard.row(BarChart("bars", source="latency", x="name"))
+    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.add(BarChart("bars", source="latency", x="name"))
 
     dashboard.emit("latency", value=96, name="a")
     dashboard.emit("latency", value=108, name="a")
@@ -246,7 +246,7 @@ async def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
 @pytest.mark.asyncio
 async def test_updates_with_an_unreadable_x__expect_the_point_dropped() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(LineChart("perf", x="requests", y="ms"))
+    dashboard.add(LineChart("perf", x="requests", y="ms"))
 
     dashboard.emit("perf", requests="many", ms=96)
     dashboard.emit("perf", requests=120, ms=108)
@@ -261,8 +261,8 @@ async def test_updates_with_an_unreadable_x__expect_the_point_dropped() -> None:
 @pytest.mark.asyncio
 async def test_updates_with_a_bad_event__expect_the_other_widgets_unaffected() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
-    dashboard.row(TimeSeriesChart("also_latency", source="latency"))
+    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("also_latency", source="latency"))
 
     dashboard.emit("latency", value="fast")
 
@@ -277,7 +277,7 @@ async def test_updates_with_a_bad_event__expect_the_other_widgets_unaffected() -
 @pytest.mark.asyncio
 async def test_hydrate_without_storage__expect_no_error() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
 
     await hydrate(dashboard)
 
@@ -286,8 +286,8 @@ async def test_hydrate_without_storage__expect_no_error() -> None:
 async def test_hydrate__expect_a_persisting_widget_seeded_from_storage() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(BarChart("commands", x="name", persist=True))
+    dashboard.add(TimeSeriesChart("latency"))
     await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     await hydrate(dashboard)
@@ -299,7 +299,7 @@ async def test_hydrate__expect_a_persisting_widget_seeded_from_storage() -> None
 async def test_hydrate_called_again_with_the_same_set__expect_it_left_alone() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
     await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     hydrated: set[str] = set()
@@ -319,13 +319,13 @@ async def test_hydrate_of_a_widget_registered_since_the_last_call__expect_it_see
 ):
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
     await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     hydrated: set[str] = set()
     await hydrate(dashboard, hydrated)
 
-    dashboard.row(BarChart("errors", x="kind", persist=True))
+    dashboard.add(BarChart("errors", x="kind", persist=True))
     await storage.save("errors", {"entries": {"timeout": 2}, "seen_at": {}})
     await hydrate(dashboard, hydrated)
 
@@ -339,7 +339,7 @@ async def test_hydrate_when_storage_raises__expect_it_retried_on_the_next_call(
 ) -> None:
     storage = PartiallyFlakyStorage(fails_on="commands")
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
 
     hydrated: set[str] = set()
 
@@ -359,7 +359,7 @@ async def test_hydrate_when_storage_raises__expect_it_retried_on_the_next_call(
 async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
 
     dashboard.emit("commands", name="/ban", value=1)
     events = dashboard.drain()
@@ -373,7 +373,7 @@ async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
 async def test_updates_of_a_persisting_table__expect_it_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(Table("sessions", columns=["user"], key="user", persist=True))
+    dashboard.add(Table("sessions", columns=["user"], key="user", persist=True))
 
     dashboard.emit("sessions", user="ada")
     events = dashboard.drain()
@@ -387,8 +387,8 @@ async def test_updates_of_a_persisting_table__expect_it_saved() -> None:
 async def test_updates_of_an_untouched_widget__expect_nothing_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", persist=True))
-    dashboard.row(BarChart("errors", x="kind", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("errors", x="kind", persist=True))
 
     dashboard.emit("commands", name="/ban", value=1)
     events = dashboard.drain()
@@ -404,8 +404,8 @@ async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persis
 ):
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("commands", x="name", source="calls", persist=True))
-    dashboard.row(BarChart("recent", x="name", source="calls"))
+    dashboard.add(BarChart("commands", x="name", source="calls", persist=True))
+    dashboard.add(BarChart("recent", x="name", source="calls"))
 
     dashboard.emit("calls", name="/ban", value=1)
     events = dashboard.drain()
@@ -421,7 +421,7 @@ async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persis
 async def test_updates_of_a_plain_bar__expect_nothing_accumulated() -> None:
     dashboard = Dashboard(path=":memory:")
     chart = BarChart("commands", x="name")
-    dashboard.row(chart)
+    dashboard.add(chart)
 
     dashboard.emit("commands", name="/ban", value=1)
     events = dashboard.drain()
@@ -435,7 +435,7 @@ async def test_updates_of_a_plain_bar__expect_nothing_accumulated() -> None:
 async def test_updates_of_a_persisting_append_widget__expect_it_saved() -> None:
     storage = FakeStorage()
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(AppendingCounter("hits", source="hits", persist=True))
+    dashboard.add(AppendingCounter("hits", source="hits", persist=True))
 
     dashboard.emit("hits", value=1)
     events = dashboard.drain()
@@ -452,8 +452,8 @@ async def test_hydrate_when_storage_raises__expect_the_other_widgets_still_seede
 ) -> None:
     storage = PartiallyFlakyStorage(fails_on="broken")
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("broken", x="name", persist=True))
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("broken", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
     await storage.save("commands", {"entries": {"/ban": 3}, "seen_at": {}})
 
     with caplog.at_level(logging.ERROR, logger="dachshund"):
@@ -467,7 +467,7 @@ async def test_hydrate_when_storage_raises__expect_the_other_widgets_still_seede
 @pytest.mark.asyncio
 async def test_updates_of_a_paginated_widget__expect_a_content_free_ping() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(Table("sessions", columns=["user"]))
+    dashboard.add(Table("sessions", columns=["user"]))
 
     dashboard.emit("sessions", user="ada")
     events = dashboard.drain()
@@ -480,7 +480,7 @@ async def test_updates_of_a_paginated_widget__expect_a_content_free_ping() -> No
 @pytest.mark.asyncio
 async def test_updates_of_a_paginated_widget__expect_events_not_reread() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(Table("sessions", columns=["user"]))
+    dashboard.add(Table("sessions", columns=["user"]))
 
     dashboard.emit("sessions", user="ada")
     events = dashboard.drain()
@@ -499,7 +499,7 @@ async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected()
     None
 ):
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(BarChart("commands", x="name"))
+    dashboard.add(BarChart("commands", x="name"))
 
     dashboard.emit("commands", name="/ban", value=1)
     events = dashboard.drain()
@@ -514,8 +514,8 @@ async def test_pump__expect_the_skip_set_built_from_non_rollup_safe_widgets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(Table("sessions", columns=["user"]))
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(Table("sessions", columns=["user"]))
+    dashboard.add(TimeSeriesChart("latency"))
     app = create_app(dashboard)
 
     calls = []
@@ -543,8 +543,8 @@ async def test_updates_when_storage_raises_for_one_widget__expect_the_others_una
 ) -> None:
     storage = PartiallyFlakyStorage(fails_on="broken")
     dashboard = Dashboard(path=":memory:", storage=storage)  # type: ignore[arg-type]
-    dashboard.row(BarChart("broken", x="name", persist=True))
-    dashboard.row(BarChart("commands", x="name", persist=True))
+    dashboard.add(BarChart("broken", x="name", persist=True))
+    dashboard.add(BarChart("commands", x="name", persist=True))
 
     dashboard.emit("broken", name="/x", value=1)
     dashboard.emit("commands", name="/ban", value=1)
@@ -573,8 +573,8 @@ class Recording:
 @pytest.mark.asyncio
 async def test_broadcast_to_pages__expect_each_told_only_its_widgets() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
-    dashboard.row(TimeSeriesChart("errors"), page="requests")
+    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
     app = create_app(dashboard)
 
     overview, requests, everything = Recording(), Recording(), Recording()
@@ -594,7 +594,7 @@ async def test_broadcast_to_pages__expect_each_told_only_its_widgets() -> None:
 @pytest.mark.asyncio
 async def test_broadcast_with_nothing_for_a_page__expect_no_send() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("latency"))
     dashboard.page("requests")
     app = create_app(dashboard)
 
@@ -618,8 +618,8 @@ async def test_connect_with_a_page__expect_it_remembered() -> None:
 @pytest.mark.asyncio
 async def test_emit_while_on_another_page__expect_nothing_pushed() -> None:
     dashboard = Dashboard(path=":memory:")
-    dashboard.row(TimeSeriesChart("latency"))
-    dashboard.row(TimeSeriesChart("errors"), page="requests")
+    dashboard.add(TimeSeriesChart("latency"))
+    dashboard.add(TimeSeriesChart("errors"), page="requests")
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         async with client.ws_connect(f"{WS_PATH}?page=requests") as page:
@@ -634,8 +634,10 @@ async def test_emit_while_on_another_page__expect_nothing_pushed() -> None:
 async def test_broadcast_to_a_tab__expect_only_its_widgets() -> None:
     dashboard = Dashboard(path=":memory:")
     activity = Page("activity")
-    activity.tab("commands").row(TimeSeriesChart("calls"))
-    activity.tab("errors").row(TimeSeriesChart("failures"))
+    with activity.tab("commands"):
+        activity.add(TimeSeriesChart("calls"))
+    with activity.tab("errors"):
+        activity.add(TimeSeriesChart("failures"))
     dashboard.include(activity)
     app = create_app(dashboard)
 

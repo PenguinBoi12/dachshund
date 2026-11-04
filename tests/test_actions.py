@@ -454,7 +454,7 @@ def test_resolve_row_actions_on_a_widget_that_doesnt_render_its_own__expect_no_c
     dashboard = Dashboard(path=":memory:")
     payload = {"rows": [{"fields": {"user": "ada"}}]}
 
-    dashboard.row(Number("cpu", actions=["ping"]))
+    dashboard.add(Number("cpu", actions=["ping"]))
     resolve_row_actions(dashboard.actions, dashboard.widgets["cpu"], payload)
 
     assert "actions" not in payload["rows"][0]
@@ -463,7 +463,7 @@ def test_resolve_row_actions_on_a_widget_that_doesnt_render_its_own__expect_no_c
 def test_resolve_row_actions_on_a_table__expect_every_row_carrying_them() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
-    dashboard.row(Table("sessions", columns=["user"], actions=["ban"]))
+    dashboard.add(Table("sessions", columns=["user"], actions=["ban"]))
     payload = {
         "columns": ["user"],
         "rows": [{"fields": {"user": "ada"}}, {"fields": {"user": "bob"}}],
@@ -479,7 +479,7 @@ def test_resolve_row_actions_on_a_table__expect_every_row_carrying_them() -> Non
 def test_resolve_row_actions_with_action_args__expect_them_on_every_row() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, name, guild_id: None)
-    dashboard.row(
+    dashboard.add(
         Table(
             "members",
             columns=["id", "name"],

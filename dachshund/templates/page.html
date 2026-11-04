@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% macro card(widget, weight=none) %}
-<section class="card"{% if weight %} style="--weight: {{ weight }}"{% endif %}
+{% macro card(widget) %}
+<section class="card"
          data-widget="{{ widget.name }}"
          data-type="{{ widget.type }}"
          data-payload="{{ widget.payload }}">
@@ -29,20 +29,16 @@
 <div class="layout">
 {% for row in rows %}
 <div class="row">
-  {% for item in row %}
-  {% if item.column %}
-  <div class="column" style="--weight: {{ item.weight }}">
-    {% for widget in item.column %}{{ card(widget) }}{% endfor %}
+  {% for column in row %}
+  <div class="column" style="--span: {{ column.span }}">
+    {% for widget in column.cards %}{{ card(widget) }}{% endfor %}
   </div>
-  {% else %}
-  {{ card(item, item.weight) }}
-  {% endif %}
   {% endfor %}
 </div>
 {% endfor %}
 {% if not rows %}
 <div class="row">
-  <section class="card empty">
+  <section class="card empty" style="grid-column: span 12">
     <h2 class="card-title">Nothing here yet</h2>
     <p class="card-body">Register a widget to start building this dashboard.</p>
   </section>

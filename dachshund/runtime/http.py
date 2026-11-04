@@ -8,7 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 import dachshund
 from dachshund.actions import action_card, bind_args, invoke, resolve_row_actions
 from dachshund.filters import FILTERS
-from dachshund.layout import DEFAULT_PAGE, Column, Page
+from dachshund.layout import DEFAULT_PAGE, Page
 from dachshund.registry import Dashboard
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
 from dachshund.widgets.base import WIDGETS, Widget
@@ -78,31 +78,20 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
 async def cards(
     dashboard: Dashboard, page: str = DEFAULT_PAGE
 ) -> list[list[dict[str, Any]]]:
-    """Build the cards of `page`, one list per row.
-
-    A column in a row comes out as `{"column": [cards]}`. Every item of a
-    row carries its `weight`, its share of the row's width.
-    """
-
-    async def build(name: str) -> dict[str, Any]:
-        return await card(dashboard, dashboard.widgets[name])
-
-    built_rows = []
-
-    for row in dashboard.layout(page):
-        built = []
-
-        for index, item in enumerate(row.items):
-            cell = (
-                {"column": [await build(name) for name in item.names]}
-                if isinstance(item, Column)
-                else await build(item)
-            )
-            built.append({**cell, "weight": row.weight(index)})
-
-        built_rows.append(built)
-
-    return built_rows
+    """Build the cards of `page`: a list per row, of `{"span", "cards"}` per column."""
+    return [
+        [
+            {
+                "span": span,
+                "cards": [
+                    await card(dashboard, dashboard.widgets[name])
+                    for name in column.names
+                ],
+            }
+            for column, span in zip(row.columns, row.spans())
+        ]
+        for row in dashboard.layout(page)
+    ]
 
 
 def page_names(dashboard: Dashboard) -> list[str]:

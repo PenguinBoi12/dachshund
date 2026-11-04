@@ -38,7 +38,7 @@ class Table(KeyedWidget):
     ## Example
 
     ```python
-    dachshund.row(Table("sessions", columns=["user", "ip"], key="user"))
+    dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))
     dachshund.emit("sessions", user="ada", ip="10.0.0.1")
     ```
 
@@ -73,7 +73,7 @@ class Table(KeyedWidget):
     @dachshund.action("ban", label="Ban", confirm=True)
     def ban(ctx, user: str, team_id: str) -> None: ...
 
-    dachshund.row(Table("sessions", columns=["user"], key="user", actions=["ban"]))
+    dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
     dachshund.emit("sessions", user="ada", _team_id="42")
     ```
 
@@ -82,7 +82,7 @@ class Table(KeyedWidget):
     ## Loader
 
     A function of `(ctx, query)`, sync or async, returning `(rows, total)`.
-    `query` is a [TableQuery][dachshund.TableQuery]: apply its search, sort,
+    `query` is a [TableQuery][dachshund.widgets.query.TableQuery]: apply its search, sort,
     offset and limit, and return that page. `total` is the number of rows
     matching the search, or `None` when counting them is too costly. It's
     called every time a page is shown.
@@ -94,7 +94,7 @@ class Table(KeyedWidget):
 
         return page, len(users)
 
-    dachshund.row(Table("users", columns=["name", "email"], loader=load_users))
+    dachshund.add(Table("users", columns=["name", "email"], loader=load_users))
     ```
 
     ## Pagination
