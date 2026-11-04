@@ -22,8 +22,10 @@ Dachshund runs as a thread inside your web app, bot, worker or daemon. There's n
 **Requirements:** Python 3.10 or higher
 
 ```bash
-pip install git+https://github.com/PenguinBoi12/dachshund.git
+pip install --pre dachshund
 ```
+
+`--pre` is needed while dachshund is in beta; pip skips pre-releases otherwise.
 
 #### 2- Start the dashboard
 
