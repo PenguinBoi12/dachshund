@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import Text
+from dachshund.widgets import Text
 
 with dachshund.row():
     dachshund.add(Text("changelog", title="Release Notes"))

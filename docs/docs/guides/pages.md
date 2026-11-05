@@ -4,7 +4,8 @@ A dashboard is split into pages, each at its own URL and in the navigation. A [P
 
 ```python
 import dachshund
-from dachshund import Number, Page, Text, TimeSeriesChart
+from dachshund import Page
+from dachshund.widgets import Number, Text, TimeSeriesChart
 
 overview_page = Page("overview", title="Overview")
 
@@ -59,7 +60,7 @@ A full-width widget is a row with one widget, like `summary` above.
 ```python
 with overview_page.row():
     for name in ("cpu", "memory", "disk"):
-        overview_page.add(Number(name))                     # 4 + 4 + 4
+        overview_page.add(Number(name))  # 4 + 4 + 4
 ```
 
 This is the same model as LiveDashboard's `<.row>` / `<:col>`.
@@ -77,7 +78,8 @@ with overview_page.row():
 A page holds either widgets or tabs. Each tab is a page of its own, at `/<page>/<tab>`, listed in a sidebar. Visiting the page shows its first tab.
 
 ```python
-from dachshund import BarChart, Page
+from dachshund import Page
+from dachshund.widgets import BarChart
 
 activity_page = Page("activity", title="Activity")
 
@@ -96,7 +98,7 @@ Widgets can also go straight on the dashboard. Without `page=`, they land on the
 
 ```python
 import dachshund
-from dachshund import Number, TimeSeriesChart
+from dachshund.widgets import Number, TimeSeriesChart
 
 with dachshund.row():
     dachshund.add(TimeSeriesChart("latency"))

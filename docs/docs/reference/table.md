@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import Table
+from dachshund.widgets import Table
 
 with dachshund.row():
     dachshund.add(Table("sessions", columns=["user", "ip"], key="user"))

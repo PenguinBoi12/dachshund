@@ -8,7 +8,7 @@ The built-in backend, in a SQLite file of its own:
 
 ```python
 import dachshund
-from dachshund.storage.sqlite import SQLiteStorage
+from dachshund.storage import SQLiteStorage
 
 dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
 ```
@@ -31,8 +31,8 @@ A backend on a synchronous client, such as an ORM, subclasses [SyncStorage][dach
 ```python
 import json
 
+from dachshund.storage import SyncStorage
 from sqlmodel import Field, Session, SQLModel, create_engine
-from dachshund.storage.protocol import SyncStorage
 
 
 class WidgetState(SQLModel, table=True):

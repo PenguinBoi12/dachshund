@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import Number
+from dachshund.widgets import Number
 
 with dachshund.row():
     dachshund.add(Number("cpu", persist=True))

@@ -18,7 +18,7 @@
 A widget built with `persist=True` needs the dashboard's `storage`. Pass one before the widget is added:
 
 ```python
-from dachshund.storage.sqlite import SQLiteStorage
+from dachshund.storage import SQLiteStorage
 
 dachshund.default(storage=SQLiteStorage("widget_state.db"))
 ```

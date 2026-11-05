@@ -3,7 +3,8 @@
 `KeyedWidget` is the base class of a widget whose state is one entry per key, like `Table` and `BarChart`.
 
 ```python
-from dachshund.widgets.state import KeyedWidget
+from dachshund.widgets import KeyedWidget
+
 
 class Leaderboard(KeyedWidget):
     type = "leaderboard"

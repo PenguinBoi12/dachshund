@@ -25,7 +25,8 @@ Here's an example structure:
 
 ```python
 # myapp/dashboard/pages/overview.py
-from dachshund import Number, Page, Table, Text, TimeSeriesChart
+from dachshund import Page
+from dachshund.widgets import Number, Table, Text, TimeSeriesChart
 
 from myapp.dashboard.loaders import load_users
 
@@ -45,13 +46,19 @@ with overview_page.row():
     overview_page.add(TimeSeriesChart("latency"))
 with overview_page.row():
     overview_page.add(
-        Table("users", columns=["id", "name", "email"], loader=load_users, actions=["deactivate"])
+        Table(
+            "users",
+            columns=["id", "name", "email"],
+            loader=load_users,
+            actions=["deactivate"],
+        )
     )
 ```
 
 ```python
 # myapp/dashboard/pages/activity.py
-from dachshund import BarChart, Number, Page
+from dachshund import Page
+from dachshund.widgets import BarChart, Number
 
 activity_page = Page("activity", title="Activity")
 
@@ -67,7 +74,7 @@ Code shared by several pages, like a table's loader, goes in a module of its own
 
 ```python
 # myapp/dashboard/loaders.py
-from dachshund import TableQuery
+from dachshund.widgets import TableQuery
 
 
 async def load_users(ctx, query: TableQuery):
@@ -88,7 +95,7 @@ async def load_users(ctx, query: TableQuery):
 ```python
 # myapp/dashboard/dashboard.py
 import dachshund
-from dachshund.storage.sqlite import SQLiteStorage
+from dachshund.storage import SQLiteStorage
 
 from myapp.dashboard.pages.activity import activity_page
 from myapp.dashboard.pages.overview import overview_page
@@ -124,6 +131,7 @@ Emit from wherever the event happens, not from the dashboard modules:
 # myapp/routes.py
 import dachshund
 
+
 def handle(request):
     ...
     dachshund.emit("latency", value=elapsed)
@@ -135,7 +143,8 @@ A library can ship a page the same way, for applications to include:
 
 ```python
 # dachshund_jobs/pages/jobs.py
-from dachshund import Number, Page, Table
+from dachshund import Page
+from dachshund.widgets import Number, Table
 
 jobs_page = Page("jobs", title="Jobs")
 with jobs_page.row():

@@ -39,7 +39,7 @@ A dashboard with persisted widgets also needs a `storage`, such as `SQLiteStorag
 Actions and loaders are plain functions, called with whatever `ctx` the test needs:
 
 ```python
-from dachshund import TableQuery
+from dachshund.widgets import TableQuery
 
 from myapp.dashboard.loaders import load_users
 

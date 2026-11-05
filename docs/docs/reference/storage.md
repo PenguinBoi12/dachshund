@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund.storage.sqlite import SQLiteStorage
+from dachshund.storage import SQLiteStorage
 
 dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
 ```

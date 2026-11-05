@@ -4,7 +4,8 @@
 
 ```python
 import dachshund
-from dachshund import Number, Page, TimeSeriesChart
+from dachshund import Page
+from dachshund.widgets import Number, TimeSeriesChart
 
 page = Page("overview", title="Overview")
 

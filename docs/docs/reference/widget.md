@@ -5,7 +5,8 @@
 ```python
 from typing import ClassVar
 
-from dachshund import Widget
+from dachshund.widgets import Widget
+
 
 class Gauge(Widget):
     type: ClassVar[str] = "gauge"

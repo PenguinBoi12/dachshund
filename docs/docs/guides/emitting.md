@@ -16,7 +16,7 @@ dachshund.emit("commands", name="/deploy", value=1)
 A widget's source is its name, unless it's given one:
 
 ```python
-from dachshund import BarChart, Number
+from dachshund.widgets import BarChart, Number
 
 with dachshund.row():
     dachshund.add(Number("latency"))

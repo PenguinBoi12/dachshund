@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import LineChart
+from dachshund.widgets import LineChart
 
 with dachshund.row():
     dachshund.add(LineChart("throughput", x="requests", y="latency"))

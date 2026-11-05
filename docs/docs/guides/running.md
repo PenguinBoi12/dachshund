@@ -26,9 +26,8 @@ Start it in the app's lifespan:
 ```python
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-
 import dachshund
+from fastapi import FastAPI
 
 
 @asynccontextmanager
@@ -49,9 +48,8 @@ app = FastAPI(lifespan=lifespan)
 Start it in the application factory:
 
 ```python
-from flask import Flask
-
 import dachshund
+from flask import Flask
 
 
 def create_app() -> Flask:

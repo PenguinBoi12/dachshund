@@ -4,10 +4,12 @@ An action is a Python function the dashboard calls from a button. A widget lists
 
 ```python
 import dachshund
-from dachshund import Number
+from dachshund.widgets import Number
+
 
 @dachshund.action("block_user", label="Block", confirm=True)
 def block_user(ctx, user_id: str) -> None: ...
+
 
 with dachshund.row():
     dachshund.add(
@@ -34,6 +36,7 @@ A handler can be sync or async. A sync handler runs in a thread, so it can block
 
 ```python
 dachshund.init("My service", context={"db": db})
+
 
 @dachshund.action("deactivate")
 async def deactivate(ctx, user_id: str) -> None:

@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import BarChart
+from dachshund.widgets import BarChart
 
 with dachshund.row():
     dachshund.add(BarChart("commands", x="name"))

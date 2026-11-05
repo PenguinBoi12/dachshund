@@ -12,7 +12,7 @@ from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from dachshund import Widget
+from dachshund.widgets import Widget
 
 
 @dataclass
@@ -27,7 +27,7 @@ class Gauge(Widget):
 ```
 
 - `op = "replace"` redraws the card on every event.
-- `op = "append"` adds one point per event, through `update(event)`. See [LineChart][dachshund.LineChart] for an example.
+- `op = "append"` adds one point per event, through `update(event)`. See [LineChart][dachshund.widgets.LineChart] for an example.
 
 #### 2- Build the payload
 
@@ -81,12 +81,12 @@ The built-in charts, in `dachshund/widgets/chart/`, make a good second example.
 
 ## Persisting
 
-To keep a widget's state across restarts, subclass [PersistableWidget][dachshund.PersistableWidget] and write its three hooks. They're only called on a widget built with `persist=True`.
+To keep a widget's state across restarts, subclass [PersistableWidget][dachshund.widgets.PersistableWidget] and write its three hooks. They're only called on a widget built with `persist=True`.
 
 ```python
 from dataclasses import field
 
-from dachshund import PersistableWidget
+from dachshund.widgets import PersistableWidget
 
 
 @dataclass
@@ -115,7 +115,7 @@ class Gauge(PersistableWidget):
 The dashboard needs a `storage`, see [Persistent Storage](persistent-storage.md):
 
 ```python
-from dachshund.storage.sqlite import SQLiteStorage
+from dachshund.storage import SQLiteStorage
 
 dachshund.init(storage=SQLiteStorage("widget_state.db"))
 with dachshund.row():

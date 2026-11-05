@@ -4,7 +4,7 @@
 
 ```python
 import dachshund
-from dachshund import TimeSeriesChart
+from dachshund.widgets import TimeSeriesChart
 
 with dachshund.row():
     dachshund.add(TimeSeriesChart("latency"))
