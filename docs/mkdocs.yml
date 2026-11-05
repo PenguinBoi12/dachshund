@@ -77,6 +77,7 @@ nav:
       - Widgets & Events: guides/widgets.md
       - Actions: guides/actions.md
       - Tables: guides/tables.md
+      - Authentication: guides/authentication.md
       - Persistent Storage: guides/persistent-storage.md
       - Bigger Dashboard: guides/bigger-dashboard.md
       - Custom Widgets: guides/custom-widgets.md

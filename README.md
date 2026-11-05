@@ -13,6 +13,7 @@ Dachshund runs as a thread inside your web app, bot, worker or daemon. There's n
 - **Live**: every `emit()` reaches the open pages as it happens
 - **Pages**: group widgets into pages and tabs, lay them out in rows and columns
 - **Actions**: buttons that call your own Python functions
+- **Authentication**: plug in your app's own auth, with public and private pages
 - **Extensible**: write your own widgets in a few lines of Python and JavaScript
 
 ## Getting Started
@@ -70,7 +71,7 @@ Start your application and visit http://127.0.0.1:1212.
 
 #### Extra: exposing the dashboard
 
-The dashboard has no authentication. Anyone who can reach its port sees every page and can run every action. Keep it on `127.0.0.1`, or put it behind a reverse proxy that authenticates.
+The dashboard has no authentication by default. Anyone who can reach its port sees every page and can run every action. Keep it on `127.0.0.1`, or give `init()` an `authorize` function to decide who gets in.
 
 To listen on every interface, for example inside a container:
 

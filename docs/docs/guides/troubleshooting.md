@@ -6,6 +6,12 @@
 - **The port is taken.** When another process holds the port, the dashboard logs a critical message and retries in the background until the port is free. Pass another `port` to `init()`, or stop the other process.
 - **It's on another interface.** By default the dashboard only listens on `127.0.0.1`. To reach it from another machine or a container, see [Exposing the dashboard](running.md#exposing-the-dashboard).
 
+## The dashboard keeps asking to log in
+
+- **`authorize` returns a falsy value.** Check what it receives: `request.headers` and `request.cookies`.
+- **`authorize` raises.** The request is denied and the error logged, look for "authorize() failed".
+- **The cookie doesn't reach the dashboard.** A cookie set on another host, or another subdomain without a covering `Domain`, isn't sent to it. See [Logging in](authentication.md#logging-in).
+
 ## A card stays empty
 
 - **Nothing was emitted yet.** A card fills in with the first event of its source.

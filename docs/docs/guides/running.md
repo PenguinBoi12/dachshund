@@ -13,6 +13,8 @@ dachshund.init(
     path="dachshund.db",
     storage=None,
     context={},
+    authorize=None,
+    login_url=None,
 )
 ```
 
@@ -23,6 +25,7 @@ dachshund.init(
 | `path` | The SQLite file events are kept in. `":memory:"` keeps them out of any file. |
 | `storage` | Where persisted widget state is saved, see [Persistent Storage](persistent-storage.md). |
 | `context` | Passed as `ctx` to every action and table loader, see [Actions](actions.md#context). |
+| `authorize`, `login_url` | Who may see each page and run each action, see [Authentication](authentication.md). |
 
 `path` and `storage` only apply to the first call that touches the dashboard. Call `init()` before adding widgets or including pages so they're used.
 
@@ -114,7 +117,7 @@ Every worker writes its events to the same events file, so a page shows all of t
 ## Exposing the dashboard
 
 !!! danger
-    The dashboard has no authentication. Anyone who can reach its port sees every page and can run every action. Keep it on `127.0.0.1`, or put it behind a reverse proxy that authenticates.
+    The dashboard has no authentication by default. Anyone who can reach its port sees every page and can run every action. Keep it on `127.0.0.1`, or give it an `authorize` function, see [Authentication](authentication.md).
 
 To listen on every interface, for example inside a container:
 

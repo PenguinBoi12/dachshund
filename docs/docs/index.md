@@ -9,6 +9,7 @@ Dachshund runs as a thread inside your web app, bot, worker or daemon. There's n
 - **Live**: every `emit()` reaches the open pages as it happens
 - **Pages**: group widgets into pages and tabs, lay them out in rows and columns
 - **Actions**: buttons that call your own Python functions
+- **Authentication**: plug in your app's own auth, with public and private pages
 - **Extensible**: write your own widgets in a few lines of Python and JavaScript
 
 !!! warning "Beta"
@@ -68,7 +69,7 @@ dachshund.emit("latency", value=96)
 Start your application and visit [http://127.0.0.1:1212](http://127.0.0.1:1212).
 
 !!! danger
-    The dashboard has no authentication. Keep it on `127.0.0.1`, or see [Exposing the dashboard](guides/running.md#exposing-the-dashboard).
+    The dashboard has no authentication by default. Keep it on `127.0.0.1`, or see [Authentication](guides/authentication.md).
 
 ## Next steps
 
@@ -79,7 +80,8 @@ The guides go from here to bigger dashboards, in order:
 3. [Widgets & Events](guides/widgets.md): which widget to use and what it reads
 4. [Actions](guides/actions.md): buttons calling your Python functions
 5. [Tables](guides/tables.md): keyed rows, row actions and rows loaded from your data
-6. [Persistent Storage](guides/persistent-storage.md): keeping widget state across restarts
-7. [Bigger Dashboard](guides/bigger-dashboard.md): one module per page
-8. [Custom Widgets](guides/custom-widgets.md): your own widget, in Python and JavaScript
-9. [Testing](guides/testing.md): checking pages, actions and loaders
+6. [Authentication](guides/authentication.md): public and private pages and actions
+7. [Persistent Storage](guides/persistent-storage.md): keeping widget state across restarts
+8. [Bigger Dashboard](guides/bigger-dashboard.md): one module per page
+9. [Custom Widgets](guides/custom-widgets.md): your own widget, in Python and JavaScript
+10. [Testing](guides/testing.md): checking pages, actions and loaders
