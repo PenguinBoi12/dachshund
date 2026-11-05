@@ -16,6 +16,13 @@ RAW_RETENTION = 1800.0
 ROLLUP_BUCKET = 60.0
 COMPACT_INTERVAL = 60.0
 
+# Each source's newest raw event, in the order `_select` reads them.
+NEWEST_PER_SOURCE = (
+    "SELECT (SELECT id FROM events AS newest WHERE newest.source = sources.source "
+    "ORDER BY at DESC, id DESC LIMIT 1) "
+    "FROM (SELECT DISTINCT source FROM events) AS sources"
+)
+
 MIGRATIONS = [
     """
     CREATE TABLE IF NOT EXISTS events (
@@ -116,6 +123,9 @@ class EventStore:
     async def compact(self, skip_rollup: frozenset[str] = frozenset()) -> None:
         """Fold raw events older than `retention` into rollup buckets.
 
+        Each source's newest event is always kept raw, so a widget showing the
+        latest value never loses it, however rarely its source emits.
+
         A source named in `skip_rollup` just has its old raw events dropped
         instead: rollup averaging is only correct for a plain numeric
         series, and would otherwise corrupt anything keyed or categorical.
@@ -184,7 +194,9 @@ class EventStore:
         cutoff = boundary - (boundary % self.bucket)
 
         rows = self._connection.execute(
-            "SELECT source, payload, at FROM events WHERE at < ?", (cutoff,)
+            "SELECT source, payload, at FROM events "
+            f"WHERE at < ? AND id NOT IN ({NEWEST_PER_SOURCE})",
+            (cutoff,),
         ).fetchall()
 
         if not rows:
@@ -222,7 +234,10 @@ class EventStore:
                 (source, bucket_start, json.dumps(payload), count),
             )
 
-        self._connection.execute("DELETE FROM events WHERE at < ?", (cutoff,))
+        self._connection.execute(
+            f"DELETE FROM events WHERE at < ? AND id NOT IN ({NEWEST_PER_SOURCE})",
+            (cutoff,),
+        )
         self._connection.commit()
 
 

@@ -143,17 +143,23 @@ async def test_compact_of_old_events__expect_the_raw_rows_deleted_and_a_rollup_r
     path = tmp_path / "events.db"
     store = make_store(path, retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    newer = old + timedelta(minutes=2)
 
-    await store.append([Event("latency", {"value": 10}, at=old)])
+    await store.append(
+        [
+            Event("latency", {"value": 10}, at=old),
+            Event("latency", {"value": 99}, at=newer),
+        ]
+    )
     await store.compact()
 
     reopened = db.connect(str(path))
-    raw = reopened.execute("SELECT * FROM events").fetchall()
+    raw = reopened.execute("SELECT payload FROM events").fetchall()
     rollups = reopened.execute(
         "SELECT source, payload, count FROM event_rollups"
     ).fetchall()
 
-    assert raw == []
+    assert raw == [(json.dumps({"value": 99}),)]
     assert rollups == [("latency", json.dumps({"value": 10.0}), 1)]
 
 
@@ -162,11 +168,13 @@ async def test_compact__expect_the_rollup_payload_averaged(tmp_path: Path) -> No
     path = tmp_path / "events.db"
     store = make_store(path, retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    newer = old + timedelta(minutes=2)
 
     await store.append(
         [
             Event("latency", {"value": 10}, at=old),
             Event("latency", {"value": 20}, at=old),
+            Event("latency", {"value": 99}, at=newer),
         ]
     )
     await store.compact()
@@ -184,8 +192,14 @@ async def test_compact_with_a_non_numeric_field__expect_it_dropped(
     path = tmp_path / "events.db"
     store = make_store(path, retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    newer = old + timedelta(minutes=2)
 
-    await store.append([Event("latency", {"value": 10, "label": "ok"}, at=old)])
+    await store.append(
+        [
+            Event("latency", {"value": 10, "label": "ok"}, at=old),
+            Event("latency", {"value": 99}, at=newer),
+        ]
+    )
     await store.compact()
 
     reopened = db.connect(str(path))
@@ -201,15 +215,21 @@ async def test_compact_with_a_skipped_source__expect_no_rollup_row(
     path = tmp_path / "events.db"
     store = make_store(path, retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    newer = old + timedelta(minutes=2)
 
-    await store.append([Event("sessions", {"user": "ada"}, at=old)])
+    await store.append(
+        [
+            Event("sessions", {"user": "ada"}, at=old),
+            Event("sessions", {"user": "grace"}, at=newer),
+        ]
+    )
     await store.compact(skip_rollup=frozenset({"sessions"}))
 
     reopened = db.connect(str(path))
-    raw = reopened.execute("SELECT * FROM events").fetchall()
+    raw = reopened.execute("SELECT payload FROM events").fetchall()
     rollups = reopened.execute("SELECT * FROM event_rollups").fetchall()
 
-    assert raw == []
+    assert raw == [(json.dumps({"user": "grace"}),)]
     assert rollups == []
 
 
@@ -220,11 +240,14 @@ async def test_compact_with_a_skipped_source__expect_others_unaffected(
     path = tmp_path / "events.db"
     store = make_store(path, retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+    newer = old + timedelta(minutes=2)
 
     await store.append(
         [
             Event("sessions", {"user": "ada"}, at=old),
+            Event("sessions", {"user": "grace"}, at=newer),
             Event("latency", {"value": 10}, at=old),
+            Event("latency", {"value": 99}, at=newer),
         ]
     )
     await store.compact(skip_rollup=frozenset({"sessions"}))
@@ -233,6 +256,70 @@ async def test_compact_with_a_skipped_source__expect_others_unaffected(
     rollups = reopened.execute("SELECT source FROM event_rollups").fetchall()
 
     assert rollups == [("latency",)]
+
+
+@pytest.mark.asyncio
+async def test_compact_of_a_skipped_source_with_only_old_events__expect_its_newest_kept(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db", retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append(
+        [
+            Event("summary", {"value": "v1"}, at=old),
+            Event("summary", {"value": "v2"}, at=old + timedelta(seconds=1)),
+            Event("summary", {"value": "v3"}, at=old + timedelta(seconds=2)),
+        ]
+    )
+    await store.compact(skip_rollup=frozenset({"summary"}))
+
+    events = await store.events("summary")
+
+    assert [event.payload for event in events] == [{"value": "v3"}]
+
+
+@pytest.mark.asyncio
+async def test_compact_of_a_rolled_up_source__expect_its_newest_kept_raw_not_rolled_up(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.db"
+    store = make_store(path, retention=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append(
+        [
+            Event("latency", {"value": 10}, at=old),
+            Event("latency", {"value": 20}, at=old + timedelta(minutes=2)),
+        ]
+    )
+    await store.compact()
+
+    reopened = db.connect(str(path))
+    rollups = reopened.execute("SELECT payload, count FROM event_rollups").fetchall()
+    events = await store.events("latency")
+
+    assert rollups == [(json.dumps({"value": 10.0}), 1)]
+    assert [event.payload for event in events] == [{"value": 10.0}, {"value": 20}]
+
+
+@pytest.mark.asyncio
+async def test_compact_after_a_newer_event__expect_the_previous_newest_compacted(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db", retention=0.0, compact_interval=0.0)
+    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
+
+    await store.append([Event("summary", {"value": "v1"}, at=old)])
+    await store.compact(skip_rollup=frozenset({"summary"}))
+    await store.append(
+        [Event("summary", {"value": "v2"}, at=old + timedelta(minutes=1))]
+    )
+    await store.compact(skip_rollup=frozenset({"summary"}))
+
+    events = await store.events("summary")
+
+    assert [event.payload for event in events] == [{"value": "v2"}]
 
 
 @pytest.mark.asyncio
@@ -267,7 +354,9 @@ async def test_compact_of_a_bucket_still_open__expect_it_left_until_it_closes(
     store._last_compact = float("-inf")
     await store.compact()
 
-    await store.append([Event("latency", {"value": 20}, at=late)])
+    await store.append(
+        [Event("latency", {"value": 20}, at=late), Event("latency", {"value": 99})]
+    )
     store.retention = time.time() - (bucket_start + 65)
     store._last_compact = float("-inf")
     await store.compact()
@@ -297,7 +386,9 @@ async def test_compact_with_an_existing_rollup_row__expect_it_merged_not_raised(
     seed.commit()
     seed.close()
 
-    await store.append([Event("latency", {"value": 20}, at=old)])
+    await store.append(
+        [Event("latency", {"value": 20}, at=old), Event("latency", {"value": 99})]
+    )
     await store.compact()
 
     reopened = db.connect(str(path))
@@ -344,7 +435,9 @@ async def test_compact_on_a_freshly_booted_machine__expect_the_first_call_to_run
     store = make_store(tmp_path / "events.db", retention=0.0)
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
 
-    await store.append([Event("latency", {"value": 10}, at=old)])
+    await store.append(
+        [Event("latency", {"value": 10}, at=old), Event("latency", {"value": 99})]
+    )
     await store.compact()
 
     rows = (
