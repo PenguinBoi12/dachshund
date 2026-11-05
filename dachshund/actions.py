@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Collection
 
 if TYPE_CHECKING:
     from dachshund.widgets.base import Widget
@@ -24,6 +24,7 @@ class Action:
     handler: Callable[..., Any]
     label: str | None = None
     confirm: bool = False
+    public: bool = False
 
 
 def make_action(
@@ -32,6 +33,7 @@ def make_action(
     *,
     label: str | None = None,
     confirm: bool = False,
+    public: bool = False,
 ) -> Action:
     """Wrap `handler` as an action, checking it takes `ctx` first."""
     parameters = list(inspect.signature(handler).parameters)
@@ -43,7 +45,7 @@ def make_action(
             "dashboard's context there."
         )
 
-    return Action(name, handler, label=label, confirm=confirm)
+    return Action(name, handler, label=label, confirm=confirm, public=public)
 
 
 def bind_args(handler: Callable[..., Any], args: dict[str, Any]) -> dict[str, Any]:
@@ -114,15 +116,22 @@ def action_card(
 
 
 def resolve_row_actions(
-    actions: dict[str, Action], widget: "Widget", payload: dict[str, Any]
+    actions: dict[str, Action],
+    widget: "Widget",
+    payload: dict[str, Any],
+    runnable: Collection[str] | None = None,
 ) -> None:
-    """Attach each row's resolved actions, including `action_args`, to a `renders_own_actions` widget's payload, in place."""
+    """Attach each row's resolved actions, including `action_args`, to a `renders_own_actions` widget's payload, in place.
+
+    With `runnable`, actions not in it are left out.
+    """
     if not widget.renders_own_actions:
         return
 
     resolved = [
         action_card(actions, name, widget.action_args.get(name))
         for name in widget.actions
+        if runnable is None or name in runnable
     ]
 
     for row in payload.get("rows", []):

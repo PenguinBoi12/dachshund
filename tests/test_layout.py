@@ -255,3 +255,7 @@ def test_registering_on_an_included_page__expect_runtime_error() -> None:
     with pytest.raises(RuntimeError, match="already included"):
         with page.row():
             page.add(chart("latency"))
+
+
+def test_page_public__expect_private_by_default() -> None:
+    assert (Page("admin").public, Page("status", public=True).public) == (False, True)

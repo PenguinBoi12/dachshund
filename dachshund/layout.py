@@ -205,6 +205,9 @@ class Page:
     - `name` (`str`) - The page's URL, `/<name>`. Can't contain `/`. Required.
     - `title` (`str`) - Shown in the navigation. Defaults to `name`,
       underscores as spaces.
+    - `public` (`bool`) - Shown without the dashboard's `authorize`, see
+      [Authentication](../guides/authentication.md). Its tabs follow it.
+      Defaults to `False`.
 
     ## Layout
 
@@ -225,12 +228,15 @@ class Page:
     and visiting the page shows the first one.
     """
 
-    def __init__(self, name: str, *, title: str | None = None) -> None:
+    def __init__(
+        self, name: str, *, title: str | None = None, public: bool = False
+    ) -> None:
         if not name.strip() or "/" in name:
             raise ValueError("A page name cannot be blank or contain '/'.")
 
         self.name = name
         self.title = title
+        self.public = public
         self.parent: Page | None = None
         self.rows: list[Row] = []
         self.widgets: dict[str, Widget] = {}
@@ -305,7 +311,12 @@ class Page:
         return tab
 
     def action(
-        self, name: str, *, label: str | None = None, confirm: bool = False
+        self,
+        name: str,
+        *,
+        label: str | None = None,
+        confirm: bool = False,
+        public: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an action, see [Dashboard.action][dachshund.registry.Dashboard.action]."""
 
@@ -316,7 +327,7 @@ class Page:
                 raise ValueError(f"An action named {name!r} already exists.")
 
             self.actions[name] = make_action(
-                name, handler, label=label, confirm=confirm
+                name, handler, label=label, confirm=confirm, public=public
             )
             return handler
 

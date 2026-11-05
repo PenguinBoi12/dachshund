@@ -7,6 +7,7 @@ from aiohttp import WSCloseCode, web
 
 from dachshund.actions import resolve_row_actions
 from dachshund.registry import Dashboard
+from dachshund.runtime.access import authorized, can_see_page, denied
 from dachshund.runtime.keys import CLIENTS, DASHBOARD
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
@@ -221,12 +222,19 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     """Hold a page's connection open for as long as it is looking.
 
     `?page=` names the dashboard page it shows, so it is only sent that
-    page's updates. Without it, it is sent every update.
+    page's updates. Without it, it is sent every update, and so needs
+    `authorize` to pass.
     """
+    page = request.query.get("page")
+    allowed = await can_see_page(request, page) if page else await authorized(request)
+
+    if not allowed:
+        raise denied(request, page=False)
+
     client = web.WebSocketResponse(heartbeat=HEARTBEAT)
     await client.prepare(request)
 
-    request.app[CLIENTS][client] = request.query.get("page")
+    request.app[CLIENTS][client] = page
 
     try:
         async for _ in client:

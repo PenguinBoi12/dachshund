@@ -5,7 +5,7 @@ import queue
 import threading
 from contextlib import AbstractContextManager, suppress
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from aiohttp import web
 
@@ -22,6 +22,9 @@ from dachshund.widgets.persistable import persisting
 QUEUE_SIZE = 10_000
 
 logger = logging.getLogger("dachshund")
+
+Authorize = Callable[[web.Request], bool | Awaitable[bool]]
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 _dashboard: "Dashboard | None" = None
 
@@ -59,6 +62,12 @@ class Dashboard:
       [Storage](../reference/storage.md). Defaults to `None`.
     - `context` (`dict`) - Passed as `ctx` to every action and table loader.
       Defaults to `{}`.
+    - `authorize` (`Callable`) - Called with a request for anything that
+      isn't `public`, sync or async, returning whether to let it in. See
+      [Authentication](../guides/authentication.md). Defaults to `None`,
+      everything is public.
+    - `login_url` (`str`) - Where a denied page redirects, with the page's URL
+      as `next`. Defaults to `None`, a denied page asks for a password.
     """
 
     def __init__(
@@ -71,6 +80,8 @@ class Dashboard:
         path: str = DEFAULT_PATH,
         storage: Storage | None = None,
         context: Context | None = None,
+        authorize: Authorize | None = None,
+        login_url: str | None = None,
     ) -> None:
         if name is not None and not name.strip():
             raise ValueError("A dashboard name cannot be blank.")
@@ -95,6 +106,8 @@ class Dashboard:
         # not something to quietly tuck into the same file as raw events.
         self.storage = storage
         self.context: Context = dict(context) if context else {}
+        self.authorize = authorize
+        self.login_url = login_url
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
@@ -135,7 +148,12 @@ class Dashboard:
         self.events.close()
 
     def action(
-        self, name: str, *, label: str | None = None, confirm: bool = False
+        self,
+        name: str,
+        *,
+        label: str | None = None,
+        confirm: bool = False,
+        public: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Register an action, called from a button on the dashboard.
 
@@ -154,6 +172,8 @@ class Dashboard:
         - `name` (`str`) - The name widgets list in `actions`. Required.
         - `label` (`str`) - The button's text. Defaults to `name`.
         - `confirm` (`bool`) - Asks before running. Defaults to `False`.
+        - `public` (`bool`) - Runs without the dashboard's `authorize`, see
+          [Authentication](../guides/authentication.md). Defaults to `False`.
         """
 
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
@@ -161,7 +181,7 @@ class Dashboard:
                 raise ValueError(f"An action named {name!r} already exists.")
 
             self.actions[name] = make_action(
-                name, handler, label=label, confirm=confirm
+                name, handler, label=label, confirm=confirm, public=public
             )
             return handler
 
@@ -264,7 +284,9 @@ class Dashboard:
 
         return page
 
-    def page(self, name: str, *, title: str | None = None) -> Page:
+    def page(
+        self, name: str, *, title: str | None = None, public: bool | None = None
+    ) -> Page:
         """Declare a page, or retitle one already declared.
 
         A dashboard that declares no page shows every widget on one `"default"`
@@ -280,14 +302,19 @@ class Dashboard:
 
         - `title` (`str`) - Shown in the navigation. Defaults to `name`,
           underscores as spaces.
+        - `public` (`bool`) - Shown without the dashboard's `authorize`, see
+          [Authentication](../guides/authentication.md). Defaults to `False`.
         """
         existing = self.pages.get(name)
 
         if existing is None:
-            return self.include(Page(name, title=title))
+            return self.include(Page(name, title=title, public=bool(public)))
 
         if title is not None:
             existing.title = title
+
+        if public is not None:
+            existing.public = public
 
         return existing
 
@@ -410,6 +437,8 @@ def init(
     path: str = DEFAULT_PATH,
     storage: Storage | None = None,
     context: Context | None = None,
+    authorize: Authorize | None = None,
+    login_url: str | None = None,
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
@@ -472,6 +501,19 @@ def init(
 
         if context is not None:
             dashboard.context.update(context)
+
+        if authorize is not None:
+            dashboard.authorize = authorize
+
+        if login_url is not None:
+            dashboard.login_url = login_url
+
+        if host not in LOCAL_HOSTS and dashboard.authorize is None:
+            logger.warning(
+                "The dashboard listens on %s with no `authorize`: anyone who "
+                "can reach it sees every page and runs every action.",
+                host,
+            )
 
         dashboard.runtime.host = host
         dashboard.runtime.requested_port = port

@@ -687,3 +687,55 @@ def test_module_level_row_and_add__expect_the_default_page_without_include() -> 
     assert dachshund.default().layout() == [
         Row([Column(["latency"]), Column(["errors"])])
     ]
+
+
+def test_init_on_every_interface_without_authorize__expect_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="dachshund"):
+        dachshund.init(host="0.0.0.0", port=0, path=":memory:")
+
+    assert "with no `authorize`" in caplog.text
+
+
+def test_init_on_every_interface_with_authorize__expect_no_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="dachshund"):
+        dashboard = dachshund.init(
+            host="0.0.0.0",
+            port=0,
+            path=":memory:",
+            authorize=lambda request: True,
+            login_url="/login",
+        )
+
+    assert "with no `authorize`" not in caplog.text
+    assert dashboard.login_url == "/login"
+
+
+def test_action_with_public__expect_it_kept_on_every_registration() -> None:
+    dashboard = Dashboard(path=":memory:")
+    page = Page("status")
+
+    @dashboard.action("refresh", public=True)
+    def refresh(ctx) -> None: ...
+
+    @page.action("restart")
+    def restart(ctx) -> None: ...
+
+    @dachshund.action("ping", public=True)
+    def ping(ctx) -> None: ...
+
+    assert dashboard.actions["refresh"].public is True
+    assert page.actions["restart"].public is False
+    assert dachshund.default().actions["ping"].public is True
+
+
+def test_page_with_public__expect_the_flag_set_and_updated() -> None:
+    with dachshund.row():
+        dachshund.add(BarChart("commands", x="name"))
+
+    assert dachshund.page("default").public is False
+    assert dachshund.page("default", public=True).public is True
+    assert dachshund.page("errors", public=True).public is True

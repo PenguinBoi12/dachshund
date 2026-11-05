@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Collection
 
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -10,6 +10,12 @@ from dachshund.actions import action_card, bind_args, invoke, resolve_row_action
 from dachshund.filters import FILTERS
 from dachshund.layout import DEFAULT_PAGE, Page
 from dachshund.registry import Dashboard
+from dachshund.runtime.access import (
+    can_run_action,
+    can_see_page,
+    denied,
+    runnable_actions,
+)
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
 from dachshund.widgets.base import WIDGETS, Widget
 from dachshund.widgets.query import TableQuery
@@ -42,7 +48,9 @@ def heading(widget: Widget) -> str:
     return widget.title or widget.name.replace("_", " ")
 
 
-async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
+async def card(
+    dashboard: Dashboard, widget: Widget, runnable: Collection[str] | None = None
+) -> dict[str, Any]:
     """Build one widget's card, filled with the events kept so far.
 
     A widget that renders its own actions (a table, one button per row)
@@ -50,6 +58,8 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
     for widgets that don't place buttons themselves. Its rows get the
     resolved `{name, label, confirm}` actions instead, so the renderer never
     has to look up `dashboard.actions` on its own.
+
+    With `runnable`, actions not in it get no button.
     """
     kept = await dashboard.events.events(widget.source)
     payload = (
@@ -57,7 +67,7 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
         if widget.paginated
         else widget.render(kept)
     )
-    resolve_row_actions(dashboard.actions, widget, payload)
+    resolve_row_actions(dashboard.actions, widget, payload, runnable)
 
     return {
         "name": widget.name,
@@ -70,13 +80,16 @@ async def card(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
             else [
                 action_card(dashboard.actions, name, widget.action_args.get(name))
                 for name in widget.actions
+                if runnable is None or name in runnable
             ]
         ),
     }
 
 
 async def cards(
-    dashboard: Dashboard, page: str = DEFAULT_PAGE
+    dashboard: Dashboard,
+    page: str = DEFAULT_PAGE,
+    runnable: Collection[str] | None = None,
 ) -> list[list[dict[str, Any]]]:
     """Build the cards of `page`: a list per row, of `{"span", "cards"}` per column."""
     rows = []
@@ -86,7 +99,8 @@ async def cards(
 
         for column, span in zip(row.columns, row.spans()):
             cards = [
-                await card(dashboard, dashboard.widgets[name]) for name in column.names
+                await card(dashboard, dashboard.widgets[name], runnable)
+                for name in column.names
             ]
             columns.append({"span": span, "cards": cards})
 
@@ -236,11 +250,16 @@ async def widget_page(request: web.Request) -> web.Response:
     if widget is None or not widget.paginated:
         raise web.HTTPNotFound()
 
+    if not await can_see_page(request, dashboard.widget_page(widget.name)):
+        raise denied(request, page=False)
+
     kept = await dashboard.events.events(widget.source)
     payload = await widget.page(
         kept, table_query(request), dashboard.context, dashboard.host_loop
     )
-    resolve_row_actions(dashboard.actions, widget, payload)
+    resolve_row_actions(
+        dashboard.actions, widget, payload, await runnable_actions(request)
+    )
 
     return web.json_response(payload)
 
@@ -249,10 +268,10 @@ async def render_page(request: web.Request, path: str) -> web.Response:
     """Render one page of the dashboard, `"parent/tab"` for a tab."""
     dashboard = request.app[DASHBOARD]
     template = request.app[TEMPLATES].get_template("page.html")
-    names = page_names(dashboard)
+    names = await visible_pages(request)
     page = shown(dashboard, path)
     top = page.split("/", 1)[0]
-    rows = await cards(dashboard, page)
+    rows = await cards(dashboard, page, await runnable_actions(request))
 
     html = template.render(
         name=dashboard.name or FALLBACK_NAME,
@@ -279,20 +298,36 @@ async def render_page(request: web.Request, path: str) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def visible_pages(request: web.Request) -> list[str]:
+    """The top-level pages `request` may see, in navigation order."""
+    return [
+        name
+        for name in page_names(request.app[DASHBOARD])
+        if await can_see_page(request, name)
+    ]
+
+
 async def index(request: web.Request) -> web.Response:
-    """Render the first page of the dashboard."""
-    return await render_page(request, page_names(request.app[DASHBOARD])[0])
+    """Render the first page the visitor may see."""
+    names = await visible_pages(request)
+
+    if not names:
+        raise denied(request, page=True)
+
+    return await render_page(request, names[0])
 
 
 async def named_page(request: web.Request) -> web.Response:
     """Render the page named in the URL, the first one redirecting to `/`."""
     page = request.match_info["page"]
-    names = page_names(request.app[DASHBOARD])
 
-    if page not in names:
+    if page not in page_names(request.app[DASHBOARD]):
         raise web.HTTPNotFound()
 
-    if page == names[0]:
+    if not await can_see_page(request, page):
+        raise denied(request, page=True)
+
+    if page == (await visible_pages(request))[0]:
         raise web.HTTPFound("/")
 
     return await render_page(request, page)
@@ -305,6 +340,9 @@ async def named_tab(request: web.Request) -> web.Response:
 
     if page is None or page.parent is None:
         raise web.HTTPNotFound()
+
+    if not await can_see_page(request, path):
+        raise denied(request, page=True)
 
     return await render_page(request, path)
 
@@ -319,6 +357,9 @@ async def run_action(request: web.Request) -> web.Response:
         return web.json_response(
             {"ok": False, "error": f"No action named {name!r}."}, status=404
         )
+
+    if not await can_run_action(request, name):
+        return web.json_response({"ok": False, "error": "Not authorized."}, status=401)
 
     try:
         body = await request.json()
