@@ -37,7 +37,8 @@ class SyncStorage:
     ## Example
 
     ```python
-    from dachshund.storage.protocol import SyncStorage
+    from dachshund.storage import SyncStorage
+
 
     class FileStorage(SyncStorage):
         def __init__(self, path: str) -> None:

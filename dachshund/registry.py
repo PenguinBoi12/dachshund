@@ -522,9 +522,9 @@ def action(
     ```python
     import dachshund
 
+
     @dachshund.action("block_user", label="Block", confirm=True)
-    def block_user(ctx: dachshund.Context, user_id: str) -> None:
-        ...
+    def block_user(ctx: dachshund.Context, user_id: str) -> None: ...
     ```
     """
     return default().action(name, **kwargs)
@@ -569,10 +569,11 @@ def row(**options: Any) -> AbstractContextManager[Row]:
 
     ```python
     import dachshund
+    from dachshund.widgets import Number, TimeSeriesChart
 
     with dachshund.row():
-        dachshund.add(dachshund.Number("errors"))
-        dachshund.add(dachshund.TimeSeriesChart("latency"))
+        dachshund.add(Number("errors"))
+        dachshund.add(TimeSeriesChart("latency"))
     ```
     """
     return default().row(**options)
@@ -595,9 +596,10 @@ def add(widget: Widget, **options: Any) -> None:
 
     ```python
     import dachshund
+    from dachshund.widgets import Number
 
     with dachshund.row():
-        dachshund.add(dachshund.Number("errors"))
+        dachshund.add(Number("errors"))
     ```
     """
     default().add(widget, **options)

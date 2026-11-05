@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from dachshund.storage.protocol import SyncStorage
+from dachshund.storage import SyncStorage
 
 
 class DictStorage(SyncStorage):

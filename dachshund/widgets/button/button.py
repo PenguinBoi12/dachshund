@@ -15,6 +15,7 @@ class Button(Widget):
     @dachshund.action("ban", label="Ban", confirm=True)
     def ban(ctx, user_id: str) -> None: ...
 
+
     with dachshund.row():
         dachshund.add(
             Button(

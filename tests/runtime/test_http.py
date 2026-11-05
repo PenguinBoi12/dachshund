@@ -7,12 +7,8 @@ from typing import Any, Sequence
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from dachshund import BarChart, Button, LineChart, Table
 from dachshund.layout import Page
 from dachshund.registry import Dashboard
-from dachshund.storage.events import Event
-from dachshund.widgets.base import Widget
-from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.runtime.http import (
     FALLBACK_NAME,
     cards,
@@ -22,6 +18,10 @@ from dachshund.runtime.http import (
     page_names,
     page_title,
 )
+from dachshund.storage import Event
+from dachshund.widgets import BarChart, Button, LineChart, Table
+from dachshund.widgets.base import Widget
+from dachshund.widgets.chart.timeseries import TimeSeriesChart
 
 FIXTURE_SCRIPT = Path(__file__).parent.parent / "fixtures" / "gauge.js"
 

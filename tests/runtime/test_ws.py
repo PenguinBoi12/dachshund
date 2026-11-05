@@ -7,7 +7,6 @@ from typing import Any, ClassVar
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from dachshund import BarChart, LineChart, Table, TimeSeriesChart
 from dachshund.layout import Page
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
@@ -20,7 +19,8 @@ from dachshund.runtime.ws import (
     pump,
     updates,
 )
-from dachshund.storage.events import Event
+from dachshund.storage import Event
+from dachshund.widgets import BarChart, LineChart, Table, TimeSeriesChart
 from dachshund.widgets.persistable import PersistableWidget
 
 RECEIVE_TIMEOUT = 5.0

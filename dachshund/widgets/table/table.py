@@ -63,7 +63,7 @@ class Table(KeyedWidget):
       Defaults to `[]`.
 
     `source`, `title` and `action_args` are common to every widget, see
-    [Widget][dachshund.Widget].
+    [Widget][dachshund.widgets.Widget].
 
     ## Row fields
 
@@ -73,6 +73,7 @@ class Table(KeyedWidget):
     ```python
     @dachshund.action("ban", label="Ban", confirm=True)
     def ban(ctx, user: str, team_id: str) -> None: ...
+
 
     with dachshund.row():
         dachshund.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
@@ -95,6 +96,7 @@ class Table(KeyedWidget):
         page = users[query.offset : query.offset + query.limit]
 
         return page, len(users)
+
 
     with dachshund.row():
         dachshund.add(Table("users", columns=["name", "email"], loader=load_users))

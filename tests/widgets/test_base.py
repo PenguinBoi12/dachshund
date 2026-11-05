@@ -8,7 +8,7 @@ from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 from dachshund.widgets.number.number import Number
-from dachshund.widgets.state import KeyedWidget
+from dachshund.widgets import KeyedWidget
 from dachshund.widgets.table.table import Table
 
 FIXTURE_SCRIPT = Path(__file__).parent.parent / "fixtures" / "gauge.js"

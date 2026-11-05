@@ -1,6 +1,6 @@
 import pytest
 
-from dachshund.storage.events import Event
+from dachshund.storage import Event
 from dachshund.widgets.chart.line import LineChart
 
 

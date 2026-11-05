@@ -192,8 +192,10 @@ class Page:
             page.add(Number("users"))
         page.add(TimeSeriesChart("latency"))
 
+
     @page.action("flush", label="Flush cache")
     def flush(ctx): ...
+
 
     dachshund.include(page)
     ```

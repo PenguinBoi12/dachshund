@@ -1,4 +1,4 @@
-from dachshund.storage.events import Event
+from dachshund.storage import Event
 from dachshund.widgets.number.number import Number
 
 

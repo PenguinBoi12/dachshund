@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from dachshund.storage.events import Event
+from dachshund.storage import Event
 from dachshund.widgets.chart.bar import BarChart
 
 

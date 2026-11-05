@@ -12,7 +12,7 @@ class LineChart(Widget):
     """A line of one field against another.
 
     An event without `x` isn't drawn. To draw against when events happened,
-    see [TimeSeriesChart][dachshund.TimeSeriesChart].
+    see [TimeSeriesChart][dachshund.widgets.TimeSeriesChart].
 
     ## Example
 

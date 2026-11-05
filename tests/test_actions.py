@@ -6,7 +6,7 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 import dachshund
-from dachshund import Number, Table, registry
+from dachshund import registry
 from dachshund.actions import (
     Action,
     action_card,
@@ -17,6 +17,7 @@ from dachshund.actions import (
 )
 from dachshund.registry import Dashboard
 from dachshund.runtime.http import create_app
+from dachshund.widgets import Number, Table
 
 
 @pytest.fixture(autouse=True)

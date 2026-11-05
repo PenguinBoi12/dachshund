@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from dachshund.storage.events import Event
+from dachshund.storage import Event
 from dachshund.widgets.base import Widget
 from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart

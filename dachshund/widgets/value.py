@@ -16,10 +16,10 @@ def numeric(value: Any) -> float | None:
     ## Example
 
     ```python
-    numeric(96)              # 96.0
-    numeric("96")            # 96.0
-    numeric(timedelta(3))    # 259200.0
-    numeric("fast")          # None
+    numeric(96)  # 96.0
+    numeric("96")  # 96.0
+    numeric(timedelta(3))  # 259200.0
+    numeric("fast")  # None
     ```
     """
     if value is None or isinstance(value, (str, bytes)) and not value.strip():
