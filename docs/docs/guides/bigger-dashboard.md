@@ -70,7 +70,7 @@ with activity_page.row():
     activity_page.add(BarChart("errors_per_route", x="route", persist=True))
 ```
 
-Code shared by several pages, like a table's loader, goes in a module of its own:
+Code shared by several pages, like a [table's loader](tables.md#rows-from-your-data), goes in a module of its own:
 
 ```python
 # myapp/dashboard/loaders.py
@@ -102,12 +102,14 @@ from myapp.dashboard.pages.overview import overview_page
 
 
 def start_dashboard(context: dict) -> None:
-    dachshund.default(storage=SQLiteStorage("widget_state.db"))  # optional
+    dachshund.init(
+        "My service",
+        storage=SQLiteStorage("widget_state.db"),
+        context=context,
+    )
 
     for page in (overview_page, activity_page):
         dachshund.include(page)
-
-    dachshund.init("My service", context=context)
 ```
 
 Your application calls it once at startup:
@@ -119,23 +121,11 @@ from myapp.dashboard.dashboard import start_dashboard
 start_dashboard(context)
 ```
 
-`context` is passed as `ctx` to every action and loader, see [Context](../reference/actions.md#context).
+`context` is passed as `ctx` to every action and loader, see [Context](actions.md#context).
 
 Including a page twice does nothing, so `start_dashboard()` can run again after a restart of the dashboard.
 
-## Emitting
-
-Emit from wherever the event happens, not from the dashboard modules:
-
-```python
-# myapp/routes.py
-import dachshund
-
-
-def handle(request):
-    ...
-    dachshund.emit("latency", value=elapsed)
-```
+Events are emitted from wherever they happen in `myapp`, not from the dashboard modules.
 
 ## Pages from a library
 

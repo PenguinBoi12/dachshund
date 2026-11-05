@@ -73,17 +73,18 @@ nav:
   - Home: index.md
   - Guides:
       - Running with Your App: guides/running.md
-      - Pages: guides/pages.md
-      - Emitting Events: guides/emitting.md
-      - Choosing a Widget: guides/widgets.md
-      - Actions: reference/actions.md
+      - Pages & Layout: guides/pages.md
+      - Widgets & Events: guides/widgets.md
+      - Actions: guides/actions.md
+      - Tables: guides/tables.md
+      - Persistent Storage: guides/persistent-storage.md
       - Bigger Dashboard: guides/bigger-dashboard.md
       - Custom Widgets: guides/custom-widgets.md
-      - Persistent Storage: guides/persistent-storage.md
       - Testing: guides/testing.md
       - Troubleshooting: guides/troubleshooting.md
   - Reference:
       - Dashboard: reference/dashboard.md
+      - Actions: reference/actions.md
       - Page: reference/page.md
       - Widget: reference/widget.md
       - Persistable Widget: reference/persistable-widget.md

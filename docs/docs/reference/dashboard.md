@@ -10,6 +10,7 @@ dachshund.init("Ada", description="Code Society's Matrix bot")
 
 with dachshund.row():
     dachshund.add(TimeSeriesChart("latency"))
+
 dachshund.emit("latency", value=96)
 ```
 

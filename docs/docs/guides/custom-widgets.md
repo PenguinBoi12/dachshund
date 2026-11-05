@@ -84,7 +84,7 @@ The built-in charts, in `dachshund/widgets/chart/`, make a good second example.
 To keep a widget's state across restarts, subclass [PersistableWidget][dachshund.widgets.PersistableWidget] and write its three hooks. They're only called on a widget built with `persist=True`.
 
 ```python
-from dataclasses import field
+from dataclasses import dataclass, field
 
 from dachshund.widgets import PersistableWidget
 
@@ -112,14 +112,11 @@ class Gauge(PersistableWidget):
         return {"value": self.value(events[-1], self.y) if events else None}
 ```
 
-The dashboard needs a `storage`, see [Persistent Storage](persistent-storage.md):
+It's built with `persist=True`, on a dashboard with a `storage`, see [Persistent Storage](persistent-storage.md):
 
 ```python
-from dachshund.storage import SQLiteStorage
-
-dachshund.init(storage=SQLiteStorage("widget_state.db"))
 with dachshund.row():
     dachshund.add(Gauge("cpu", persist=True))
 ```
 
-For state with one entry per key, subclass [KeyedWidget][dachshund.widgets.state.KeyedWidget] instead. It provides the three hooks.
+For state with one entry per key, subclass [KeyedWidget][dachshund.widgets.KeyedWidget] instead. It provides the three hooks.

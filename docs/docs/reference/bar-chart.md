@@ -8,6 +8,7 @@ from dachshund.widgets import BarChart
 
 with dachshund.row():
     dachshund.add(BarChart("commands", x="name"))
+
 dachshund.emit("commands", name="/ban", value=1)
 ```
 

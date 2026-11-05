@@ -4,23 +4,23 @@
 
 - **The process exited.** The dashboard runs on a background thread and stops with the process. See [A script](running.md#a-script).
 - **The port is taken.** When another process holds the port, the dashboard logs a critical message and retries in the background until the port is free. Pass another `port` to `init()`, or stop the other process.
-- **It's on another interface.** By default the dashboard only listens on `127.0.0.1`. To reach it from another machine or a container, see [exposing the dashboard](../index.md#extra-exposing-the-dashboard).
+- **It's on another interface.** By default the dashboard only listens on `127.0.0.1`. To reach it from another machine or a container, see [Exposing the dashboard](running.md#exposing-the-dashboard).
 
-## A card shows "—"
+## A card stays empty
 
 - **Nothing was emitted yet.** A card fills in with the first event of its source.
 - **The source doesn't match.** A widget shows the events emitted under its name, or its `source`.
-- **The field doesn't match.** `Number` reads `value` unless given another `y`. A missing or non-numeric field logs a warning once, see [Fields](emitting.md#fields).
-- **The events are older than 30 minutes.** Only line and time series charts keep older events. Build the widget with `persist=True` to keep its state, see [How long events are kept](emitting.md#how-long-events-are-kept).
+- **The field doesn't match.** `Number` reads `value` unless given another `y`. A missing or non-numeric field logs a warning once, see [Choosing a widget](widgets.md#choosing-a-widget).
+- **The events are older than 30 minutes.** Only line and time series charts keep older events. Build the widget with `persist=True` to keep its state, see [How long events are kept](widgets.md#how-long-events-are-kept).
 
 ## "wants to persist, but no storage is configured"
 
-A widget built with `persist=True` needs the dashboard's `storage`. Pass one before the widget is added:
+A widget built with `persist=True` needs the dashboard's `storage`. Pass it to `init()`, called before the widget is added or its page included:
 
 ```python
 from dachshund.storage import SQLiteStorage
 
-dachshund.default(storage=SQLiteStorage("widget_state.db"))
+dachshund.init("My service", storage=SQLiteStorage("widget_state.db"))
 ```
 
 ## "already exists" or "already taken"

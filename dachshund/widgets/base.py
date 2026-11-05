@@ -40,7 +40,7 @@ class Widget:
     - `title` (`str`) - The card's title. Defaults to `name`, underscores as
       spaces.
     - `actions` (`list[str]`) - The actions shown as buttons on the card, see
-      [Actions](../reference/actions.md). Defaults to `[]`.
+      [Actions](../guides/actions.md). Defaults to `[]`.
     - `action_args` (`dict[str, dict]`) - The arguments each action is called
       with, by action name. Defaults to `{}`.
 

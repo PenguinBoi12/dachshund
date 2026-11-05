@@ -1,15 +1,17 @@
 # Testing
 
-A `Page` is a plain object, so its widgets, rows and actions can be checked directly:
+A `Page` is a plain object, so its widgets, rows and actions can be checked directly. These tests use the pages from [Bigger Dashboard](bigger-dashboard.md).
 
 ```python
-from dachshund import Row
+from dachshund import Column, Row
 
 from myapp.dashboard.pages.overview import overview_page
 
 
-def test_overview_page__expect_latency_beside_users():
-    assert overview_page.rows[1] == Row(["latency", "users"], (2, 1))
+def test_overview_page__expect_user_count_beside_latency():
+    assert overview_page.rows[1] == Row(
+        [Column(["user_count"], span=4), Column(["latency"])]
+    )
 
 
 def test_overview_page__expect_the_deactivate_action():
@@ -34,7 +36,7 @@ def test_dashboard__expect_every_page_included():
     assert list(dashboard.pages) == ["overview", "activity"]
 ```
 
-A dashboard with persisted widgets also needs a `storage`, such as `SQLiteStorage(":memory:")`.
+A dashboard with persisted widgets also needs a `storage`: `Dashboard(path=":memory:", storage=SQLiteStorage(":memory:"))`.
 
 Actions and loaders are plain functions, called with whatever `ctx` the test needs:
 

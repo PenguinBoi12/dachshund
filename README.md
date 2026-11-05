@@ -19,7 +19,7 @@ Dachshund runs as a thread inside your web app, bot, worker or daemon. There's n
 
 #### 1- Install the package
 
-**Requirements:** Python 3.10 or higher
+**Requirements:** Python 3.12 or higher
 
 ```bash
 pip install --pre dachshund

@@ -1,19 +1,25 @@
 # Persistent Storage
 
-A widget built with `persist=True` keeps its state across restarts. That state is saved to the dashboard's `storage`, which this guide sets up. For the widget side, see [Persisting](custom-widgets.md#persisting).
-
-## SQLiteStorage
-
-The built-in backend, in a SQLite file of its own:
+A widget built with `persist=True` keeps its state across restarts, like a bar chart's totals or a keyed table's rows. That state is saved to the dashboard's `storage`.
 
 ```python
 import dachshund
 from dachshund.storage import SQLiteStorage
+from dachshund.widgets import BarChart
 
-dachshund.init("Ada", storage=SQLiteStorage("widget_state.db"))
+dachshund.init("My service", storage=SQLiteStorage("widget_state.db"))
+
+with dachshund.row():
+    dachshund.add(BarChart("commands", x="name", persist=True))
 ```
 
-A dashboard has no storage by default. Adding a widget with `persist=True` to one raises an error.
+`storage` only applies to the first call that touches the dashboard, so pass it to `init()` before adding widgets or including pages. Adding a widget with `persist=True` to a dashboard without storage raises an error.
+
+To make your own widget persistable, see [Persisting](custom-widgets.md#persisting).
+
+## SQLiteStorage
+
+The built-in backend, used above, keeps the state in a SQLite file of its own. `SQLiteStorage(":memory:")` keeps it in memory, for tests.
 
 ## Writing your own
 
@@ -62,7 +68,7 @@ class SQLModelStorage(SyncStorage):
 ```
 
 ```python
-dachshund.init("Ada", storage=SQLModelStorage("sqlite:///widget_state.db"))
+dachshund.init("My service", storage=SQLModelStorage("sqlite:///widget_state.db"))
 ```
 
 ## Raw events

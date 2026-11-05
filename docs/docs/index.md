@@ -18,7 +18,7 @@ Dachshund runs as a thread inside your web app, bot, worker or daemon. There's n
 
 #### 1- Install the package
 
-**Requirements:** Python 3.10 or higher
+**Requirements:** Python 3.12 or higher
 
 ```bash
 pip install --pre dachshund
@@ -45,6 +45,7 @@ from dachshund import Page
 from dachshund.widgets import Number, TimeSeriesChart
 
 page = Page("overview", title="Overview")
+
 with page.row():
     page.add(Number("users"))
 
@@ -66,17 +67,19 @@ dachshund.emit("latency", value=96)
 
 Start your application and visit [http://127.0.0.1:1212](http://127.0.0.1:1212).
 
-#### Extra: exposing the dashboard
-
 !!! danger
-    The dashboard has no authentication. Anyone who can reach its port sees every page and can run every action. Keep it on `127.0.0.1`, or put it behind a reverse proxy that authenticates.
+    The dashboard has no authentication. Keep it on `127.0.0.1`, or see [Exposing the dashboard](guides/running.md#exposing-the-dashboard).
 
-To listen on every interface, for example inside a container:
+## Next steps
 
-```python
-dachshund.init("My service", host="0.0.0.0", port=1212)
-```
+The guides go from here to bigger dashboards, in order:
 
-A reverse proxy must allow WebSocket upgrades on `/_ws`, which carries the live updates.
-
-Head to [Running with Your App](guides/running.md) and the [Pages](guides/pages.md) guide next.
+1. [Running with Your App](guides/running.md): `init()` options, FastAPI, Flask, asyncio, several workers
+2. [Pages & Layout](guides/pages.md): rows, columns, pages and tabs
+3. [Widgets & Events](guides/widgets.md): which widget to use and what it reads
+4. [Actions](guides/actions.md): buttons calling your Python functions
+5. [Tables](guides/tables.md): keyed rows, row actions and rows loaded from your data
+6. [Persistent Storage](guides/persistent-storage.md): keeping widget state across restarts
+7. [Bigger Dashboard](guides/bigger-dashboard.md): one module per page
+8. [Custom Widgets](guides/custom-widgets.md): your own widget, in Python and JavaScript
+9. [Testing](guides/testing.md): checking pages, actions and loaders

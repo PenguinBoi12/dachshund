@@ -140,7 +140,7 @@ class Dashboard:
         """Register an action, called from a button on the dashboard.
 
         The handler's first parameter must be `ctx`, it receives the dashboard's
-        `context`. See [Actions](../reference/actions.md).
+        `context`. See [Actions](../guides/actions.md).
 
         ## Example
 
