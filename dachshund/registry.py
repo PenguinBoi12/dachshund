@@ -4,8 +4,9 @@ import logging
 import queue
 import threading
 from contextlib import AbstractContextManager, suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
+from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
@@ -68,6 +69,9 @@ class Dashboard:
       everything is public.
     - `login_url` (`str`) - Where a denied page redirects, with the page's URL
       as `next`. Defaults to `None`, a denied page asks for a password.
+    - `timezone` (`str`) - The IANA zone, like `"America/Toronto"`, where
+      `"day"`, `"week"` and `"month"` windows and daily buckets start. See
+      [Aggregating](../guides/widgets.md#aggregating). Defaults to `"UTC"`.
     """
 
     def __init__(
@@ -82,13 +86,14 @@ class Dashboard:
         context: Context | None = None,
         authorize: Authorize | None = None,
         login_url: str | None = None,
+        timezone: str = "UTC",
     ) -> None:
         if name is not None and not name.strip():
             raise ValueError("A dashboard name cannot be blank.")
 
         self.name = name
         self.description = description
-        self.started_at = datetime.now(tz=timezone.utc)
+        self.started_at = datetime.now(tz=UTC)
         self.path = path
 
         self.widgets: dict[str, Widget] = {}
@@ -108,6 +113,7 @@ class Dashboard:
         self.context: Context = dict(context) if context else {}
         self.authorize = authorize
         self.login_url = login_url
+        self.timezone = ZoneInfo(timezone)
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
@@ -439,6 +445,7 @@ def init(
     context: Context | None = None,
     authorize: Authorize | None = None,
     login_url: str | None = None,
+    timezone: str | None = None,
 ) -> Dashboard:
     """Start the dashboard alongside your application.
 
@@ -507,6 +514,9 @@ def init(
 
         if login_url is not None:
             dashboard.login_url = login_url
+
+        if timezone is not None:
+            dashboard.timezone = ZoneInfo(timezone)
 
         if host not in LOCAL_HOSTS and dashboard.authorize is None:
             logger.warning(

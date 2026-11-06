@@ -7,6 +7,7 @@ from aiohttp import WSCloseCode, web
 
 from dachshund.actions import resolve_row_actions
 from dachshund.registry import Dashboard
+from dachshund.runtime import render
 from dachshund.runtime.access import authorized, can_see_page, denied
 from dachshund.runtime.keys import CLIENTS, DASHBOARD
 from dachshund.storage.events import Event
@@ -20,9 +21,27 @@ HEARTBEAT = 30.0
 logger = logging.getLogger("dachshund")
 
 
+def live_op(widget: Widget) -> str:
+    """How a page applies `widget`'s updates: a windowed widget is redrawn whole."""
+    return "replace" if render.windowed(widget) else widget.op
+
+
 def message(widget: Widget, data: dict[str, Any]) -> dict[str, Any]:
     """Build what a page applies to one widget."""
-    return {"widget": widget.name, "op": widget.op, "data": data}
+    return {"widget": widget.name, "op": live_op(widget), "data": data}
+
+
+def distinct_fields(dashboard: Dashboard) -> dict[str, set[str]]:
+    """The fields whose distinct values compaction keeps, by source."""
+    fields: dict[str, set[str]] = {}
+
+    for widget in dashboard.widgets.values():
+        if getattr(widget, "aggregate", None) == "distinct":
+            fields.setdefault(widget.source, set()).update(
+                getattr(widget, "fields", ())
+            )
+
+    return fields
 
 
 async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
@@ -55,7 +74,7 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
                 widget.accumulate(event)
                 persisted[widget.name] = widget
 
-            if widget.op != "append":
+            if live_op(widget) != "append":
                 rebuilt[widget.name] = widget
                 continue
 
@@ -76,8 +95,7 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
             messages.append(message(widget, {}))
             continue
 
-        kept = await dashboard.events.events(widget.source)
-        payload = widget.render(kept)
+        payload = await render.payload(dashboard, widget)
         resolve_row_actions(dashboard.actions, widget, payload)
         messages.append(message(widget, payload))
 
@@ -179,12 +197,7 @@ async def pump(app: web.Application, hydrated: set[str] | None = None) -> None:
             events = dashboard.drain()
             await dashboard.events.append(events)
 
-            skip_rollup = frozenset(
-                widget.source
-                for widget in dashboard.widgets.values()
-                if not widget.rollup_safe
-            )
-            await dashboard.events.compact(skip_rollup)
+            await dashboard.events.compact(distinct_fields(dashboard))
 
             await broadcast(app, await updates(dashboard, events))
         except Exception:

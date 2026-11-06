@@ -739,3 +739,15 @@ def test_page_with_public__expect_the_flag_set_and_updated() -> None:
     assert dachshund.page("default").public is False
     assert dachshund.page("default", public=True).public is True
     assert dachshund.page("errors", public=True).public is True
+
+
+def test_init_with_a_timezone__expect_it_kept() -> None:
+    dashboard = dachshund.init(port=0, path=":memory:", timezone="America/Toronto")
+
+    assert str(dashboard.timezone) == "America/Toronto"
+    assert str(Dashboard(path=":memory:").timezone) == "UTC"
+
+
+def test_dashboard_with_an_unknown_timezone__expect_an_error() -> None:
+    with pytest.raises(Exception, match="No time zone found"):
+        Dashboard(path=":memory:", timezone="Mars/Olympus")

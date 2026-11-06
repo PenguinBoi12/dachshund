@@ -19,6 +19,10 @@
 - **The field doesn't match.** `Number` reads `value` unless given another `y`. A missing or non-numeric field logs a warning once, see [Choosing a widget](widgets.md#choosing-a-widget).
 - **The events are older than 30 minutes.** Only line and time series charts keep older events. Build the widget with `persist=True` to keep its state, see [How long events are kept](widgets.md#how-long-events-are-kept).
 
+## A count over the last hour doesn't go down
+
+An aggregate is refreshed with each event of its source and on page load, not on a timer. With no new event, it shows its value as of the last one. Reload the page to see it as of now.
+
 ## "wants to persist, but no storage is configured"
 
 A widget built with `persist=True` needs the dashboard's `storage`. Pass it to `init()`, called before the widget is added or its page included:

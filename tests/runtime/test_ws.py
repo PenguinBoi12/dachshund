@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, ClassVar
 
 import pytest
@@ -20,7 +21,7 @@ from dachshund.runtime.ws import (
     updates,
 )
 from dachshund.storage import Event
-from dachshund.widgets import BarChart, LineChart, Table, TimeSeriesChart
+from dachshund.widgets import BarChart, LineChart, Number, Table, TimeSeriesChart
 from dachshund.widgets.persistable import PersistableWidget
 
 RECEIVE_TIMEOUT = 5.0
@@ -387,7 +388,7 @@ async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
-    assert storage.saved["commands"]["entries"] == {"/ban": 1.0}
+    assert storage.saved["commands"]["entries"]["/ban"]["sum"] == 1.0
 
 
 @pytest.mark.asyncio
@@ -543,20 +544,21 @@ async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected()
 
 
 @pytest.mark.asyncio
-async def test_pump__expect_the_skip_set_built_from_non_rollup_safe_widgets(
+async def test_pump__expect_distinct_fields_passed_to_compaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dashboard = Dashboard(path=":memory:")
     with dashboard.row():
-        dashboard.add(Table("sessions", columns=["user"]))
-    with dashboard.row():
-        dashboard.add(TimeSeriesChart("latency"))
+        dashboard.add(
+            Number("active", source="messages", y="author", aggregate="distinct")
+        )
+        dashboard.add(Number("messages", aggregate="count"))
     app = create_app(dashboard)
 
     calls = []
 
-    async def fake_compact(skip_rollup: frozenset[str] = frozenset()) -> None:
-        calls.append(skip_rollup)
+    async def fake_compact(distinct_fields: dict[str, set[str]]) -> None:
+        calls.append(distinct_fields)
 
     monkeypatch.setattr(dashboard.events, "compact", fake_compact)
 
@@ -567,9 +569,7 @@ async def test_pump__expect_the_skip_set_built_from_non_rollup_safe_widgets(
     with suppress(asyncio.CancelledError):
         await task
 
-    assert calls
-    assert "sessions" in calls[0]
-    assert "latency" not in calls[0]
+    assert calls[0] == {"messages": {"author"}}
 
 
 @pytest.mark.asyncio
@@ -591,7 +591,7 @@ async def test_updates_when_storage_raises_for_one_widget__expect_the_others_una
     with caplog.at_level(logging.ERROR, logger="dachshund"):
         messages = await updates(dashboard, events)
 
-    assert storage.saved["commands"]["entries"] == {"/ban": 1.0}
+    assert storage.saved["commands"]["entries"]["/ban"]["sum"] == 1.0
     assert "broken" not in storage.saved
     assert {message["widget"] for message in messages} == {"broken", "commands"}
     assert "'broken'" in caplog.text
@@ -693,3 +693,30 @@ async def test_broadcast_to_a_tab__expect_only_its_widgets() -> None:
     await broadcast(app, [calls, failures])
 
     assert commands.sent == [[calls]]
+
+
+@pytest.mark.asyncio
+async def test_updates_of_a_windowed_timeseries__expect_the_whole_series_replaced() -> (
+    None
+):
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(
+            TimeSeriesChart(
+                "requests",
+                aggregate="count",
+                every=timedelta(minutes=1),
+                over=timedelta(minutes=5),
+            )
+        )
+
+    dashboard.emit("requests")
+    dashboard.emit("requests")
+    events = dashboard.drain()
+    await dashboard.events.append(events)
+
+    [update] = await updates(dashboard, events)
+
+    assert update["op"] == "replace"
+    assert update["data"]["series"] == ["value"]
+    assert sum(update["data"]["y"][0]) == 2

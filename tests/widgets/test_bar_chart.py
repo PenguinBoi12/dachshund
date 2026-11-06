@@ -79,7 +79,8 @@ def test_bar_accumulate_with_persist__expect_the_totals_kept() -> None:
     chart.accumulate(Event("commands", {"name": "/ban", "value": 1}))
     chart.accumulate(Event("commands", {"name": "/help", "value": 1}))
 
-    assert chart.state.entries == {"/ban": 2.0, "/help": 1.0}
+    assert chart.render([])["x"] == ["/ban", "/help"]
+    assert chart.render([])["y"] == [[2.0, 1.0]]
     assert chart.snapshot() == chart.state.snapshot()
 
 
@@ -88,7 +89,7 @@ def test_bar_accumulate_with_an_unreadable_value__expect_it_skipped() -> None:
 
     chart.accumulate(Event("weight", {"name": "/ban", "ms": "slow"}))
 
-    assert chart.state.entries == {}
+    assert chart.render([])["x"] == []
 
 
 def test_bar_accumulate_with_delete__expect_the_category_dropped() -> None:
@@ -107,7 +108,7 @@ def test_bar_sweep__expect_untouched_categories_dropped() -> None:
 
     chart.sweep(before=3.0)
 
-    assert chart.state.entries == {"/help": 1.0}
+    assert chart.render([])["x"] == ["/help"]
 
 
 def test_bar_restore__expect_the_totals_seeded() -> None:

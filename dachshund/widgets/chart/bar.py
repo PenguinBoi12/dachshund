@@ -1,8 +1,10 @@
+import json
 from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Sequence
 
-from dachshund.storage.events import Event
+from dachshund.storage.events import DISTINCT_CAP, Bucket, Event
+from dachshund.widgets.aggregate import WINDOWED, aggregated, check
 from dachshund.widgets.state import KeyedWidget
 
 UNLABELLED = "—"
@@ -10,7 +12,7 @@ UNLABELLED = "—"
 
 @dataclass
 class BarChart(KeyedWidget):
-    """A bar per category, totalling a field of its events.
+    """A bar per category, aggregating a field of its events: its total by default.
 
     Bars keep the order their categories first appeared in.
 
@@ -25,9 +27,11 @@ class BarChart(KeyedWidget):
     ## Options
 
     - `x` (`str`) - The field naming an event's category. Required.
-    - `y` (`str`) - The field added to the category's total. Defaults to
-      `"value"`.
-    - `persist` (`bool`) - Keeps the totals across restarts. Needs the
+    - `y` (`str`) - The field aggregated per category. Defaults to `"value"`.
+    - `aggregate` (`str`) - `"sum"`, `"count"`, `"average"`, `"min"`, `"max"`
+      or `"distinct"` of `y` per category. `"count"` counts events, whatever
+      `y`. Defaults to `"sum"`. See [Aggregating](../guides/widgets.md#aggregating).
+    - `persist` (`bool`) - Keeps the bars across restarts. Needs the
       dashboard's `storage`. Defaults to `False`.
 
     ## Removing a category
@@ -46,11 +50,16 @@ class BarChart(KeyedWidget):
 
     x: str
     y: str = "value"
+    aggregate: str = "sum"
 
     type: ClassVar[str] = "bar"
     op: ClassVar[str] = "replace"
     script: ClassVar[Path] = Path(__file__).parent / "charts.js"
     style: ClassVar[Path] = Path(__file__).parent / "charts.css"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        check(self.name, self.aggregate, WINDOWED)
 
     @property
     def series(self) -> tuple[str, ...]:
@@ -58,38 +67,65 @@ class BarChart(KeyedWidget):
         return (self.y,)
 
     def render(self, events: Sequence[Event]) -> dict[str, Any]:
-        """Total every event into the bar of its category.
+        """Aggregate every event into the bar of its category.
 
-        A persisting chart reads its own kept totals instead, since those
-        cover more than whatever events are still around to re-total.
+        A persisting chart reads its own kept bars instead, since those cover
+        more than whatever events are still around to re-aggregate.
         """
         if self.persist:
-            totals = self.state.entries
+            entries = self.state.entries
         else:
-            totals = {}
+            entries = {}
 
             for event in events:
-                value = self.value(event, self.y)
-
-                # A gap has no meaning in a total, so it is left out of one.
-                if value is None:
-                    continue
-
                 category = self.category(event)
-                totals[category] = totals.get(category, 0.0) + value
+                entries[category] = self.tally(entries.get(category), event)
+
+        bars = {}
+
+        for category, entry in entries.items():
+            value = aggregated(_bucket(entry), self.aggregate)
+
+            # A category with nothing to show, like no number to sum, has no bar.
+            if value is not None:
+                bars[category] = value
 
         return {
             "series": list(self.series),
-            "x": list(totals),
-            "y": [list(totals.values())],
+            "x": list(bars),
+            "y": [list(bars.values())],
         }
 
     def category(self, event: Event) -> str:
         """Which bar the event belongs to."""
         return str(event.payload.get(self.x, UNLABELLED))
 
+    def tally(self, entry: Any, event: Event) -> dict[str, Any]:
+        """A category's entry with `event` added: how many events, and `y`'s numbers."""
+        kept = _entry(entry)
+        value = self.value(event, self.y) if self.aggregate != "count" else None
+
+        kept["count"] += 1
+
+        if value is not None:
+            kept["values"] += 1
+            kept["sum"] += value
+            kept["min"] = value if kept["min"] is None else min(kept["min"], value)
+            kept["max"] = value if kept["max"] is None else max(kept["max"], value)
+
+        if self.aggregate == "distinct" and kept["distinct"] is not None:
+            raw = event.payload.get(self.y)
+
+            if raw is not None:
+                labels = set(kept["distinct"]) | {_label(raw)}
+                kept["distinct"] = (
+                    sorted(labels) if len(labels) <= DISTINCT_CAP else None
+                )
+
+        return kept
+
     def accumulate(self, event: Event) -> None:
-        """Fold one more event into the kept totals.
+        """Fold one more event into the kept bars.
 
         A truthy `_delete` removes the category instead of adding to it.
         """
@@ -99,10 +135,49 @@ class BarChart(KeyedWidget):
             self.state.remove(category)
             return
 
-        value = self.value(event, self.y)
+        entry = self.tally(self.state.entries.get(category), event)
+        self.state.upsert(category, entry, event.at.timestamp())
 
-        if value is None:
-            return
 
-        current = self.state.entries.get(category, 0.0)
-        self.state.upsert(category, current + value, event.at.timestamp())
+def _entry(entry: Any) -> dict[str, Any]:
+    """A copy of a category's entry, a total kept before aggregates read as one event."""
+    if entry is None:
+        return {
+            "count": 0,
+            "values": 0,
+            "sum": 0.0,
+            "min": None,
+            "max": None,
+            "distinct": [],
+        }
+
+    if isinstance(entry, (int, float)):
+        return {
+            "count": 1,
+            "values": 1,
+            "sum": float(entry),
+            "min": float(entry),
+            "max": float(entry),
+            "distinct": None,
+        }
+
+    return dict(entry)
+
+
+def _bucket(entry: Any) -> Bucket:
+    kept = _entry(entry)
+    distinct = kept["distinct"]
+
+    return Bucket(
+        0.0,
+        count=kept["count"],
+        values=kept["values"],
+        sum=kept["sum"],
+        min=kept["min"],
+        max=kept["max"],
+        distinct=None if distinct is None else set(distinct),
+    )
+
+
+def _label(value: Any) -> str:
+    return value if isinstance(value, str) else json.dumps(value)

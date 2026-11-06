@@ -10,6 +10,7 @@ from dachshund.actions import action_card, bind_args, invoke, resolve_row_action
 from dachshund.filters import FILTERS
 from dachshund.layout import DEFAULT_PAGE, Page
 from dachshund.registry import Dashboard
+from dachshund.runtime import render
 from dachshund.runtime.access import (
     can_run_action,
     can_see_page,
@@ -61,12 +62,14 @@ async def card(
 
     With `runnable`, actions not in it get no button.
     """
-    kept = await dashboard.events.events(widget.source)
-    payload = (
-        await widget.page(kept, TableQuery(), dashboard.context, dashboard.host_loop)
-        if widget.paginated
-        else widget.render(kept)
-    )
+    if widget.paginated:
+        kept = await dashboard.events.events(widget.source, rollups=widget.rollup_safe)
+        payload = await widget.page(
+            kept, TableQuery(), dashboard.context, dashboard.host_loop
+        )
+    else:
+        payload = await render.payload(dashboard, widget)
+
     resolve_row_actions(dashboard.actions, widget, payload, runnable)
 
     return {
@@ -253,7 +256,7 @@ async def widget_page(request: web.Request) -> web.Response:
     if not await can_see_page(request, dashboard.widget_page(widget.name)):
         raise denied(request, page=False)
 
-    kept = await dashboard.events.events(widget.source)
+    kept = await dashboard.events.events(widget.source, rollups=widget.rollup_safe)
     payload = await widget.page(
         kept, table_query(request), dashboard.context, dashboard.host_loop
     )

@@ -79,6 +79,36 @@ dachshund.emit("cpu", value=42)
 
 The built-in charts, in `dachshund/widgets/chart/`, make a good second example.
 
+## Aggregating
+
+A widget showing one number can subclass [AggregatedWidget][dachshund.widgets.AggregatedWidget] instead. It takes `y`, `aggregate` and `over` like [Number](../reference/number.md), works out the number, and only asks for the payload:
+
+```python
+from dataclasses import dataclass
+from datetime import timedelta
+from pathlib import Path
+from typing import ClassVar
+
+from dachshund.widgets import AggregatedWidget
+
+
+@dataclass
+class Gauge(AggregatedWidget):
+    type: ClassVar[str] = "gauge"
+    script: ClassVar[Path] = Path(__file__).parent / "gauge.js"
+
+    def render_value(self, value):
+        return {"value": value}
+
+
+with dachshund.row():
+    dachshund.add(
+        Gauge("latency", y="ms", aggregate="average", over=timedelta(hours=1))
+    )
+```
+
+`value` is `None` before there's anything to show. See [Aggregating](widgets.md#aggregating) for the aggregates.
+
 ## Persisting
 
 To keep a widget's state across restarts, subclass [PersistableWidget][dachshund.widgets.PersistableWidget] and write its three hooks. They're only called on a widget built with `persist=True`.

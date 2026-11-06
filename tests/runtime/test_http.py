@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -19,7 +20,7 @@ from dachshund.runtime.http import (
     page_title,
 )
 from dachshund.storage import Event
-from dachshund.widgets import BarChart, Button, LineChart, Table
+from dachshund.widgets import BarChart, Button, LineChart, Number, Table
 from dachshund.widgets.base import Widget
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 
@@ -868,3 +869,19 @@ async def test_tab__expect_its_page_title_after_the_dashboard_name() -> None:
         body = await (await client.get("/activity/errors")).text()
 
     assert "<title>Grace - Activity</title>" in body
+
+
+@pytest.mark.asyncio
+async def test_card_of_a_windowed_number__expect_the_aggregate() -> None:
+    dashboard = Dashboard("Ada", path=":memory:")
+    with dashboard.row():
+        dashboard.add(Number("requests", aggregate="count", over=timedelta(hours=1)))
+
+    for _ in range(3):
+        dashboard.emit("requests", route="/users")
+    await dashboard.events.append(dashboard.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert "{&#34;value&#34;: 3, &#34;unit&#34;: null}" in body

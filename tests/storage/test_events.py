@@ -209,57 +209,7 @@ async def test_compact_with_a_non_numeric_field__expect_it_dropped(
 
 
 @pytest.mark.asyncio
-async def test_compact_with_a_skipped_source__expect_no_rollup_row(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "events.db"
-    store = make_store(path, retention=0.0)
-    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
-    newer = old + timedelta(minutes=2)
-
-    await store.append(
-        [
-            Event("sessions", {"user": "ada"}, at=old),
-            Event("sessions", {"user": "grace"}, at=newer),
-        ]
-    )
-    await store.compact(skip_rollup=frozenset({"sessions"}))
-
-    reopened = db.connect(str(path))
-    raw = reopened.execute("SELECT payload FROM events").fetchall()
-    rollups = reopened.execute("SELECT * FROM event_rollups").fetchall()
-
-    assert raw == [(json.dumps({"user": "grace"}),)]
-    assert rollups == []
-
-
-@pytest.mark.asyncio
-async def test_compact_with_a_skipped_source__expect_others_unaffected(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "events.db"
-    store = make_store(path, retention=0.0)
-    old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
-    newer = old + timedelta(minutes=2)
-
-    await store.append(
-        [
-            Event("sessions", {"user": "ada"}, at=old),
-            Event("sessions", {"user": "grace"}, at=newer),
-            Event("latency", {"value": 10}, at=old),
-            Event("latency", {"value": 99}, at=newer),
-        ]
-    )
-    await store.compact(skip_rollup=frozenset({"sessions"}))
-
-    reopened = db.connect(str(path))
-    rollups = reopened.execute("SELECT source FROM event_rollups").fetchall()
-
-    assert rollups == [("latency",)]
-
-
-@pytest.mark.asyncio
-async def test_compact_of_a_skipped_source_with_only_old_events__expect_its_newest_kept(
+async def test_compact_of_a_source_with_only_old_events__expect_its_newest_kept_raw(
     tmp_path: Path,
 ) -> None:
     store = make_store(tmp_path / "events.db", retention=0.0)
@@ -272,9 +222,9 @@ async def test_compact_of_a_skipped_source_with_only_old_events__expect_its_newe
             Event("summary", {"value": "v3"}, at=old + timedelta(seconds=2)),
         ]
     )
-    await store.compact(skip_rollup=frozenset({"summary"}))
+    await store.compact()
 
-    events = await store.events("summary")
+    events = await store.events("summary", rollups=False)
 
     assert [event.payload for event in events] == [{"value": "v3"}]
 
@@ -311,13 +261,13 @@ async def test_compact_after_a_newer_event__expect_the_previous_newest_compacted
     old = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
 
     await store.append([Event("summary", {"value": "v1"}, at=old)])
-    await store.compact(skip_rollup=frozenset({"summary"}))
+    await store.compact()
     await store.append(
         [Event("summary", {"value": "v2"}, at=old + timedelta(minutes=1))]
     )
-    await store.compact(skip_rollup=frozenset({"summary"}))
+    await store.compact()
 
-    events = await store.events("summary")
+    events = await store.events("summary", rollups=False)
 
     assert [event.payload for event in events] == [{"value": "v2"}]
 
@@ -328,9 +278,7 @@ async def test_compact_before_the_interval_elapses__expect_the_second_call_a_noo
 ) -> None:
     store = make_store(tmp_path / "events.db", retention=0.0)
     calls = []
-    monkeypatch.setattr(
-        store, "_compact", lambda skip_rollup=frozenset(): calls.append(None)
-    )
+    monkeypatch.setattr(store, "_compact", lambda distinct_fields: calls.append(None))
 
     await store.compact()
     await store.compact()

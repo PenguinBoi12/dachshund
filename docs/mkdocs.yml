@@ -90,6 +90,7 @@ nav:
       - Widget: reference/widget.md
       - Persistable Widget: reference/persistable-widget.md
       - Keyed Widget: reference/keyed-widget.md
+      - Aggregated Widget: reference/aggregated-widget.md
       - Time Series Chart: reference/timeseries-chart.md
       - Line Chart: reference/line-chart.md
       - Bar Chart: reference/bar-chart.md

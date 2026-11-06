@@ -1,5 +1,6 @@
 """The cards the dashboard draws."""
 
+from dachshund.widgets.aggregate import AggregatedWidget
 from dachshund.widgets.base import Widget
 from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart
@@ -13,6 +14,7 @@ from dachshund.widgets.table.table import Table
 from dachshund.widgets.text.text import Text
 
 __all__ = [
+    "AggregatedWidget",
     "BarChart",
     "Button",
     "KeyedWidget",

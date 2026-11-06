@@ -1,6 +1,6 @@
 # Number
 
-`Number` shows the latest number of its source, big.
+`Number` shows one number of its source, big: the latest, or an aggregate over a window, see [Aggregating](../guides/widgets.md#aggregating).
 
 ```python
 import dachshund
