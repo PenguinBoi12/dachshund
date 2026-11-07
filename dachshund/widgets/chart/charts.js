@@ -391,6 +391,31 @@
       }),
     });
 
+  const measure = document.createElement("canvas").getContext("2d");
+  const LABEL_GAP = 12;
+
+  const labelled = (plot, labels, min, max) => {
+    const first = Math.max(0, Math.ceil(min));
+    const last = Math.min(labels.length - 1, Math.floor(max));
+
+    if (last < first) return [];
+
+    measure.font = `10px ${token("--font-mono")}`;
+    const widest = Math.max(
+      ...labels.slice(first, last + 1).map((label) => measure.measureText(String(label)).width),
+    );
+    const slot = plot.bbox.width / devicePixelRatio / (max - min);
+    // Before the chart has a width, every label: it's redrawn once sized.
+    const step = slot > 0 ? Math.max(1, Math.ceil((widest + LABEL_GAP) / slot)) : 1;
+    const shown = [];
+
+    for (let index = first; index <= last; index += 1) {
+      if (index % step === 0) shown.push(index);
+    }
+
+    return shown;
+  };
+
   const bars = () =>
     chart({
       // Half a slot of padding either side, so every bar gets equal room.
@@ -412,7 +437,7 @@
       axis: (state) => ({
         grid: { show: false },
         values: (plot, splits) => splits.map((index) => state.labels[index] ?? ""),
-        splits: () => state.labels.map((_, index) => index),
+        splits: (plot, axis, min, max) => labelled(plot, state.labels, min, max),
       }),
       data: (payload) => [
         (payload.x ?? []).map((_, index) => index),
