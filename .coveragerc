@@ -1,0 +1,3 @@
+[report]
+omit = ./tests/*,./bin/*,./db/seeds/*
+skip_empty = true

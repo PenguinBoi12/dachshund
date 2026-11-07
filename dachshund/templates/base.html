@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ name }}{% if heading %} - {{ heading }}{% endif %}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ static_url }}/uplot.min.css">
+    <link rel="stylesheet" href="{{ static_url }}/dashboard.css">
+    {% for url in widget_styles %}
+    <link rel="stylesheet" href="{{ url }}">
+    {% endfor %}
+  </head>
+  <body data-page="{{ page }}">
+    <main class="page">
+      <header class="masthead">
+        <h1 class="service-name">{{ name }}</h1>
+        <span class="service-status" title="{{ started_at|timestamp }}">online · {{ started_at|since }}</span>
+      </header>
+      {% if description %}
+      <p class="service-description">{{ description }}</p>
+      {% endif %}
+      {% if pages|length > 1 %}
+      <nav class="pages">
+        {% for page in pages %}
+        <a href="{{ page.url }}"{% if page.current %} aria-current="page"{% endif %}>{{ page.title }}</a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="colophon">
+      <span><a href="https://github.com/PenguinBoi12/dachshund">dachshund</a> - v{{ version }}</span>
+      {% if account %}<a class="account-link" href="{{ account.url }}">{{ account.label }}</a>{% endif %}
+    </footer>
+    <script>window.Dachshund = window.Dachshund || { renderers: {}, widget(type, renderer) { this.renderers[type] = renderer; } };</script>
+    <script src="{{ static_url }}/uplot.min.js"></script>
+    {% for url in widget_scripts %}
+    <script src="{{ url }}"></script>
+    {% endfor %}
+    <script src="{{ static_url }}/dashboard.js"></script>
+  </body>
+</html>

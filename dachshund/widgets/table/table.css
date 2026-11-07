@@ -1,0 +1,159 @@
+.card-content.table {
+  overflow-x: auto;
+}
+
+.card-content.table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.card-content.table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0 10px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-content.table td {
+  height: 40px;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--separator);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.card-content.table tr:last-child td {
+  border-bottom: none;
+}
+
+.card-content.table .table-filler-row td {
+  border-bottom: none;
+}
+
+.table-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.table-row-actions button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  height: var(--control-height-small);
+  padding: 0 10px;
+  cursor: pointer;
+  transition: border-color 0.3s, color 0.3s;
+}
+
+.table-row-actions button:hover {
+  background: var(--hover);
+}
+
+.table-row-actions button.action-ok {
+  border-color: var(--online);
+  color: var(--online);
+}
+
+.table-row-actions button.action-error {
+  border-color: var(--offline);
+  color: var(--offline);
+}
+
+/* Top-aligned: centred rows taller than the box would overflow above it,
+   out of the scroll's reach. */
+.card.expanded .card-content.table {
+  flex: 1 1 0;
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+
+.table-search {
+  width: 50%;
+  margin-top: 12px;
+  flex-shrink: 0;
+  height: var(--control-height);
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+
+.table-search[hidden] {
+  display: none;
+}
+
+.table-search:focus {
+  outline: none;
+  border-color: var(--text-dim);
+}
+
+.card-content.table th button {
+  appearance: none;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.card-content.table th button:hover,
+.card-content.table th[aria-sort="ascending"] button,
+.card-content.table th[aria-sort="descending"] button {
+  color: var(--text);
+}
+
+.table-count {
+  margin-right: auto;
+}
+
+.table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.table-pager button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-small);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  height: var(--control-height);
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.table-pager button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.table-pager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
