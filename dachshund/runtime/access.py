@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from aiohttp import web
 
 from dachshund.actions import run
-from dachshund.registry import Dashboard
+from dachshund.registry import LOGIN_PREFIX, Dashboard
 from dachshund.runtime.keys import DASHBOARD
 
 AUTHORIZED = "dachshund.authorized"
@@ -64,14 +64,40 @@ async def runnable_actions(request: web.Request) -> set[str]:
     return {name for name in dashboard.actions if await can_run_action(request, name)}
 
 
+def login_location(request: web.Request) -> str | None:
+    """The login page, coming back to `request`'s URL, `None` without one."""
+    login_url = request.app[DASHBOARD].login_page
+
+    if login_url is None:
+        return None
+
+    separator = "&" if "?" in login_url else "?"
+    return f"{login_url}{separator}{urlencode({'next': str(request.url)})}"
+
+
+async def account(request: web.Request) -> dict[str, str] | None:
+    """The footer's log in or log out link, `None` without a login page."""
+    dashboard = request.app[DASHBOARD]
+    location = login_location(request)
+
+    if dashboard.authorize is None or location is None:
+        return None
+
+    if not await authorized(request):
+        return {"label": "Log in", "url": location}
+
+    if "logout" in dashboard.login:
+        return {"label": "Log out", "url": f"{LOGIN_PREFIX}/logout"}
+
+    return None
+
+
 def denied(request: web.Request, *, page: bool) -> web.HTTPException:
     """What a denied request gets: a login redirect or prompt for a page, 401 otherwise."""
-    login_url = request.app[DASHBOARD].login_url
+    location = login_location(request)
 
-    if page and login_url:
-        separator = "&" if "?" in login_url else "?"
-        query = urlencode({"next": str(request.url)})
-        return web.HTTPFound(f"{login_url}{separator}{query}")
+    if page and location:
+        return web.HTTPFound(location)
 
     if page:
         return web.HTTPUnauthorized(

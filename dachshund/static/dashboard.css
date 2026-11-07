@@ -237,6 +237,9 @@ body {
 }
 
 .colophon {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
   max-width: 1560px;
   margin: 0 auto;
   padding: 0 40px 40px;

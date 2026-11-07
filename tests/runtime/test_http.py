@@ -907,3 +907,17 @@ async def test_widget_page_of_logs_with_a_level__expect_only_that_level() -> Non
     assert [row["fields"]["message"] for row in one["rows"]] == ["odd"]
     assert [row["fields"]["message"] for row in two["rows"]] == ["broken", "fine"]
     assert len(bad["rows"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_index__expect_an_expand_button_on_every_card() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+        dashboard.add(Table("sessions", columns=["user"]))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert body.count("data-expand") == 2
+    assert 'aria-label="Expand latency"' in body

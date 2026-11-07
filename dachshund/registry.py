@@ -5,7 +5,7 @@ import queue
 import threading
 from contextlib import AbstractContextManager, suppress
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from aiohttp import web
@@ -25,7 +25,9 @@ QUEUE_SIZE = 10_000
 logger = logging.getLogger("dachshund")
 
 Authorize = Callable[[web.Request], bool | Awaitable[bool]]
+Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+LOGIN_PREFIX = "/_auth"
 
 _dashboard: "Dashboard | None" = None
 
@@ -69,6 +71,11 @@ class Dashboard:
       everything is public.
     - `login_url` (`str`) - Where a denied page redirects, with the page's URL
       as `next`. Defaults to `None`, a denied page asks for a password.
+    - `login` (`dict`) - Login handlers served by the dashboard, for an
+      application with no web server of its own: aiohttp handlers by name,
+      each at `/_auth/<name>`, public. A denied page redirects to
+      `/_auth/login`, so `"login"` is required. Can't be combined with
+      `login_url`. Defaults to `None`.
     - `timezone` (`str`) - The IANA zone, like `"America/Toronto"`, where
       `"day"`, `"week"` and `"month"` windows and daily buckets start. See
       [Aggregating](../guides/widgets.md#aggregating). Defaults to `"UTC"`.
@@ -86,6 +93,7 @@ class Dashboard:
         context: Context | None = None,
         authorize: Authorize | None = None,
         login_url: str | None = None,
+        login: Mapping[str, Handler] | None = None,
         timezone: str = "UTC",
     ) -> None:
         if name is not None and not name.strip():
@@ -112,10 +120,12 @@ class Dashboard:
         self.storage = storage
         self.context: Context = dict(context) if context else {}
         self.authorize = authorize
-        self.login_url = login_url
+        self.login_url: str | None = None
+        self.login: dict[str, Handler] = {}
         self.timezone = ZoneInfo(timezone)
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
+        self.set_login(login_url, login)
         self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
 
         self.host_loop: asyncio.AbstractEventLoop | None = None
@@ -198,6 +208,39 @@ class Dashboard:
             return handler
 
         return decorator
+
+    @property
+    def login_page(self) -> str | None:
+        """Where a denied page redirects: `login_url`, or the `login` handler."""
+        return f"{LOGIN_PREFIX}/login" if self.login else self.login_url
+
+    def set_login(
+        self, login_url: str | None, login: Mapping[str, Handler] | None
+    ) -> None:
+        """Set where visitors log in: an application's page, or handlers served here."""
+        if login_url is not None and login:
+            raise ValueError(
+                "Give `login_url` or `login`, not both: there's one place to log in."
+            )
+
+        if login:
+            if "login" not in login:
+                raise ValueError(
+                    "`login` needs a 'login' handler, where denied pages redirect."
+                )
+
+            for name in login:
+                if not name or "/" in name:
+                    raise ValueError(
+                        f"Login handler names are one path segment, got {name!r}."
+                    )
+
+            if self.is_running:
+                raise RuntimeError("Give `login` before the dashboard starts.")
+
+            self.login, self.login_url = dict(login), None
+        elif login_url is not None:
+            self.login_url, self.login = login_url, {}
 
     def emit(self, source: str, /, **fields: Any) -> None:
         """Emit an event on the dashboard.
@@ -455,6 +498,7 @@ def init(
     context: Context | None = None,
     authorize: Authorize | None = None,
     login_url: str | None = None,
+    login: Mapping[str, Handler] | None = None,
     timezone: str | None = None,
 ) -> Dashboard:
     """Start the dashboard alongside your application.
@@ -522,8 +566,7 @@ def init(
         if authorize is not None:
             dashboard.authorize = authorize
 
-        if login_url is not None:
-            dashboard.login_url = login_url
+        dashboard.set_login(login_url, login)
 
         if timezone is not None:
             dashboard.timezone = ZoneInfo(timezone)

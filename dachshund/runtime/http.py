@@ -9,9 +9,10 @@ import dachshund
 from dachshund.actions import action_card, bind_args, invoke, resolve_row_actions
 from dachshund.filters import FILTERS
 from dachshund.layout import DEFAULT_PAGE, Page
-from dachshund.registry import Dashboard
+from dachshund.registry import LOGIN_PREFIX, Dashboard
 from dachshund.runtime import render
 from dachshund.runtime.access import (
+    account,
     can_run_action,
     can_see_page,
     denied,
@@ -305,6 +306,7 @@ async def render_page(request: web.Request, path: str) -> web.Response:
         widget_styles=widget_styles(dashboard),
         version=dachshund.__version__,
         static_url=STATIC_PREFIX,
+        account=await account(request),
     )
 
     return web.Response(text=html, content_type="text/html")
@@ -421,6 +423,10 @@ def create_app(dashboard: Dashboard) -> web.Application:
     app.router.add_post("/_actions/{name}", run_action, name="action")
     app.router.add_get("/_widgets/{name}/page", widget_page, name="widget-page")
     app.router.add_static(STATIC_PREFIX, STATIC_DIR, name="static")
+
+    for name, handler in dashboard.login.items():
+        app.router.add_route("*", f"{LOGIN_PREFIX}/{name}", handler)
+
     # Last, so a page name never shadows one of the routes above.
     app.router.add_get("/{page}", named_page, name="page")
     app.router.add_get("/{page}/{tab}", named_tab, name="tab")

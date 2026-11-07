@@ -46,9 +46,28 @@ dachshund.init(
 )
 ```
 
+With a login page, from `login_url` or `login`, the footer shows **Log in** to a visitor `authorize` turns down, back to the page they're on. With a `"logout"` handler in `login`, it shows **Log out** to one it lets in.
+
 Dachshund has no login page of its own: the visitor logs in to your application, which sets its session cookie, and `authorize` checks that cookie.
 
 Browsers send a cookie to every port of the host that set it, so a cookie set by your application on `myapp.example` reaches the dashboard on `myapp.example:1212`. For a dashboard on another subdomain, the cookie needs a `Domain` covering both.
+
+### On the dashboard itself
+
+An application with no web server of its own, like a bot logging in with OAuth, gives the dashboard its login handlers with `login`. Each one is an async aiohttp handler, served at `/_auth/<name>` without `authorize`, and a denied page redirects to `/_auth/login`:
+
+```python
+dachshund.init(
+    "My bot",
+    authorize=authorize,
+    login={"login": login, "callback": callback, "logout": logout},
+)
+```
+
+- `"login"` is required. It gets the page the visitor wanted as `next`.
+- `callback` sets the session cookie that `authorize` checks. With OAuth, the provider's redirect URI is `https://<dashboard>/_auth/callback`.
+- `login` and `login_url` can't be combined: there's one place to log in.
+- Without `login`, nothing is served under `/_auth/`.
 
 ## With an auth library
 

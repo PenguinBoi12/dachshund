@@ -202,7 +202,8 @@ class Page:
 
     ## Options
 
-    - `name` (`str`) - The page's URL, `/<name>`. Can't contain `/`. Required.
+    - `name` (`str`) - The page's URL, `/<name>`. Can't contain `/` or start
+      with `_`. Required.
     - `title` (`str`) - Shown in the navigation. Defaults to `name`,
       underscores as spaces.
     - `public` (`bool`) - Shown without the dashboard's `authorize`, see
@@ -233,6 +234,11 @@ class Page:
     ) -> None:
         if not name.strip() or "/" in name:
             raise ValueError("A page name cannot be blank or contain '/'.")
+
+        if name.startswith("_"):
+            raise ValueError(
+                f"Page names starting with '_' are dachshund's own, rename {name!r}."
+            )
 
         self.name = name
         self.title = title

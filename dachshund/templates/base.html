@@ -28,7 +28,10 @@
       {% endif %}
       {% block content %}{% endblock %}
     </main>
-    <footer class="colophon"><a href="https://github.com/PenguinBoi12/dachshund">dachshund</a> - v{{ version }}</footer>
+    <footer class="colophon">
+      <span><a href="https://github.com/PenguinBoi12/dachshund">dachshund</a> - v{{ version }}</span>
+      {% if account %}<a class="account-link" href="{{ account.url }}">{{ account.label }}</a>{% endif %}
+    </footer>
     <script>window.Dachshund = window.Dachshund || { renderers: {}, widget(type, renderer) { this.renderers[type] = renderer; } };</script>
     <script src="{{ static_url }}/uplot.min.js"></script>
     {% for url in widget_scripts %}

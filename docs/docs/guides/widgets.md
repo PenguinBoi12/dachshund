@@ -87,6 +87,16 @@ dachshund.emit("requests", route="/users", ms=12, user="ada")
 
 An aggregate is refreshed with each event of its source and on page load. A count over the last hour doesn't go down between events.
 
+## Expanding a widget
+
+Every card has an expand button in its corner, shown on hover. It opens the widget over the whole window, above a dimmed dashboard: charts redraw at the new size, and tables show 50 rows a page. Esc or the button closes it.
+
+The open widget is in the page's URL as `?view=<name>`, so a link opens straight on it:
+
+```
+/activity?view=logs
+```
+
 ## How long events are kept
 
 Each widget is built from the latest 500 events of its source. After 30 minutes, events are rolled up into one bucket per minute, kept for good, holding how many events it saw and the count, sum, min and max of each numeric field. Line and time series charts draw a bucket as one averaged point. Each source's newest event always stays as it was emitted, and a [Logs](logs.md) widget's source keeps its newest `keep` lines.
