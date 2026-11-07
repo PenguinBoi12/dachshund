@@ -21,11 +21,10 @@ DISTINCT_CAP = 10_000
 
 logger = logging.getLogger("dachshund")
 
-# Each source's newest raw event, in the order `_select` reads them.
-NEWEST_PER_SOURCE = (
-    "SELECT (SELECT id FROM events AS newest WHERE newest.source = sources.source "
-    "ORDER BY at DESC, id DESC LIMIT 1) "
-    "FROM (SELECT DISTINCT source FROM events) AS sources"
+# Each raw event's rank in its source, newest first, in the order `_select` reads them.
+RANKED = (
+    "SELECT id, source, ROW_NUMBER() OVER "
+    "(PARTITION BY source ORDER BY at DESC, id DESC) AS rank FROM events"
 )
 
 MIGRATIONS = [
@@ -160,14 +159,19 @@ class EventStore:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._insert, events)
 
-    async def events(self, source: str, *, rollups: bool = True) -> list[Event]:
+    async def events(
+        self, source: str, *, rollups: bool = True, limit: int | None = None
+    ) -> list[Event]:
         """The most recent kept events of a source, up to `limit`, oldest first.
 
         With `rollups`, events older than `retention` come back as one averaged
-        event per bucket. Without, only raw events are read.
+        event per bucket. Without, only raw events are read. `limit` defaults
+        to the store's.
         """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, self._select, source, rollups)
+        return await loop.run_in_executor(
+            self._executor, self._select, source, rollups, limit or self.limit
+        )
 
     async def summarize(
         self,
@@ -198,7 +202,9 @@ class EventStore:
         )
 
     async def compact(
-        self, distinct_fields: Mapping[str, set[str]] | None = None
+        self,
+        distinct_fields: Mapping[str, set[str]] | None = None,
+        keep: Mapping[str, int] | None = None,
     ) -> None:
         """Fold raw events older than `retention` into rollup buckets.
 
@@ -207,8 +213,9 @@ class EventStore:
         source, the fields whose distinct values are kept too, up to
         `DISTINCT_CAP` per bucket.
 
-        Each source's newest event is always kept raw, so a widget showing the
-        latest value never loses it, however rarely its source emits.
+        Each source's newest `keep` events, 1 for a source it doesn't name, are
+        always kept raw, so a widget showing the latest value never loses it,
+        however rarely its source emits.
 
         A no-op unless `compact_interval` has elapsed since the last call,
         so it's safe to call on every pump tick.
@@ -228,7 +235,7 @@ class EventStore:
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
-            self._executor, self._compact, dict(distinct_fields or {})
+            self._executor, self._compact, dict(distinct_fields or {}), dict(keep or {})
         )
 
     def _insert(self, events: Sequence[Event]) -> None:
@@ -241,18 +248,22 @@ class EventStore:
         )
         self._connection.commit()
 
-    def _select(self, source: str, rollups: bool = True) -> list[Event]:
+    def _select(
+        self, source: str, rollups: bool = True, limit: int | None = None
+    ) -> list[Event]:
+        limit = limit or self.limit
+
         raw = self._connection.execute(
             "SELECT payload, at FROM events "
             "WHERE source = ? ORDER BY at DESC, id DESC LIMIT ?",
-            (source, self.limit),
+            (source, limit),
         ).fetchall()
 
         averaged = (
             self._connection.execute(
                 "SELECT payload, bucket_start FROM event_rollups "
                 "WHERE source = ? ORDER BY bucket_start DESC LIMIT ?",
-                (source, self.limit),
+                (source, limit),
             ).fetchall()
             if rollups
             else []
@@ -273,15 +284,18 @@ class EventStore:
         ]
         events.sort(key=lambda event: event.at)
 
-        return events[-self.limit :]
+        return events[-limit:]
 
-    def _compact(self, distinct_fields: dict[str, set[str]]) -> None:
+    def _compact(
+        self, distinct_fields: dict[str, set[str]], keep: dict[str, int] | None = None
+    ) -> None:
         boundary = time.time() - self.retention
         cutoff = boundary - (boundary % self.bucket)
+        self._keep_newest(keep or {})
 
         rows = self._connection.execute(
             "SELECT source, payload, at FROM events "
-            f"WHERE at < ? AND id NOT IN ({NEWEST_PER_SOURCE})",
+            "WHERE at < ? AND id NOT IN (SELECT id FROM kept)",
             (cutoff,),
         ).fetchall()
 
@@ -333,10 +347,27 @@ class EventStore:
             )
 
         self._connection.execute(
-            f"DELETE FROM events WHERE at < ? AND id NOT IN ({NEWEST_PER_SOURCE})",
+            "DELETE FROM events WHERE at < ? AND id NOT IN (SELECT id FROM kept)",
             (cutoff,),
         )
         self._connection.commit()
+
+    def _keep_newest(self, keep: dict[str, int]) -> None:
+        """Fill the `kept` temp table with each source's newest `keep` raw event ids."""
+        self._connection.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS kept (id INTEGER PRIMARY KEY)"
+        )
+        self._connection.execute("DELETE FROM kept")
+
+        ranked = self._connection.execute(
+            f"SELECT id, source, rank FROM ({RANKED}) WHERE rank <= ?",
+            (max(keep.values(), default=1),),
+        ).fetchall()
+
+        self._connection.executemany(
+            "INSERT INTO kept (id) VALUES (?)",
+            [(id,) for id, source, rank in ranked if rank <= keep.get(source, 1)],
+        )
 
     def _summarize(
         self,

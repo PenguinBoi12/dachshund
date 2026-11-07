@@ -163,3 +163,9 @@ class Widget:
     def update(self, event: Event) -> dict[str, Any] | None:
         """Build the change a single new event makes, if it makes one."""
         raise NotImplementedError
+
+    def bind(self, dashboard: Any) -> None:
+        """Called when the widget goes on `dashboard`, and when it starts again."""
+
+    def unbind(self) -> None:
+        """Called when the widget leaves its dashboard, and when it stops."""

@@ -20,7 +20,7 @@ from dachshund.runtime.http import (
     page_title,
 )
 from dachshund.storage import Event
-from dachshund.widgets import BarChart, Button, LineChart, Number, Table
+from dachshund.widgets import BarChart, Button, LineChart, Logs, Number, Table
 from dachshund.widgets.base import Widget
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
 
@@ -885,3 +885,25 @@ async def test_card_of_a_windowed_number__expect_the_aggregate() -> None:
         body = await (await client.get("/")).text()
 
     assert "{&#34;value&#34;: 3, &#34;unit&#34;: null}" in body
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_logs_with_a_level__expect_only_that_level() -> None:
+    dashboard = Dashboard("Ada", path=":memory:")
+    with dashboard.row():
+        dashboard.add(Logs("logs", logger="tests.http"))
+    dashboard.widgets["logs"].unbind()
+
+    dashboard.emit("logs", level="INFO", levelno=20, message="fine")
+    dashboard.emit("logs", level="WARNING", levelno=30, message="odd")
+    dashboard.emit("logs", level="ERROR", levelno=40, message="broken")
+    await dashboard.events.append(dashboard.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        one = await (await client.get("/_widgets/logs/page?level=30")).json()
+        two = await (await client.get("/_widgets/logs/page?level=20&level=40")).json()
+        bad = await (await client.get("/_widgets/logs/page?level=x")).json()
+
+    assert [row["fields"]["message"] for row in one["rows"]] == ["odd"]
+    assert [row["fields"]["message"] for row in two["rows"]] == ["broken", "fine"]
+    assert len(bad["rows"]) == 3

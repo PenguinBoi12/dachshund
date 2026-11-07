@@ -557,7 +557,9 @@ async def test_pump__expect_distinct_fields_passed_to_compaction(
 
     calls = []
 
-    async def fake_compact(distinct_fields: dict[str, set[str]]) -> None:
+    async def fake_compact(
+        distinct_fields: dict[str, set[str]], keep: dict[str, int]
+    ) -> None:
         calls.append(distinct_fields)
 
     monkeypatch.setattr(dashboard.events, "compact", fake_compact)

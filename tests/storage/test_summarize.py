@@ -291,3 +291,38 @@ async def test_summarize_from_mid_bucket__expect_the_overlapping_rollup_counted(
     )
 
     assert bucket.count == 3
+
+
+@pytest.mark.asyncio
+async def test_compact_with_keep__expect_the_newest_n_raw_and_the_rest_rolled_up(
+    tmp_path: Path,
+) -> None:
+    store = make_store(tmp_path / "events.db")
+    old = minute_ago(10)
+
+    await store.append(
+        [Event("logs", {"n": n}, at=at(old + n)) for n in range(5)]
+        + [Event("latency", {"n": n}, at=at(old + n)) for n in range(3)]
+    )
+    await store.compact(keep={"logs": 3})
+
+    logs = await store.events("logs", rollups=False)
+    latency = await store.events("latency", rollups=False)
+    rolled = dict(
+        db.connect(str(tmp_path / "events.db"))
+        .execute("SELECT source, count FROM event_rollups")
+        .fetchall()
+    )
+
+    assert [event.payload["n"] for event in logs] == [2, 3, 4]
+    assert [event.payload["n"] for event in latency] == [2]
+    assert rolled == {"logs": 2, "latency": 2}
+
+
+@pytest.mark.asyncio
+async def test_events_with_a_limit__expect_that_many(tmp_path: Path) -> None:
+    store = make_store(tmp_path / "events.db", retention=3600.0)
+
+    await store.append([Event("logs", {"n": n}) for n in range(5)])
+
+    assert [e.payload["n"] for e in await store.events("logs", limit=2)] == [3, 4]

@@ -78,10 +78,11 @@ The guides go from here to bigger dashboards, in order:
 1. [Running with Your App](guides/running.md): `init()` options, FastAPI, Flask, asyncio, several workers
 2. [Pages & Layout](guides/pages.md): rows, columns, pages and tabs
 3. [Widgets & Events](guides/widgets.md): which widget to use and what it reads
-4. [Actions](guides/actions.md): buttons calling your Python functions
-5. [Tables](guides/tables.md): keyed rows, row actions and rows loaded from your data
-6. [Authentication](guides/authentication.md): public and private pages and actions
-7. [Persistent Storage](guides/persistent-storage.md): keeping widget state across restarts
-8. [Bigger Dashboard](guides/bigger-dashboard.md): one module per page
-9. [Custom Widgets](guides/custom-widgets.md): your own widget, in Python and JavaScript
-10. [Testing](guides/testing.md): checking pages, actions and loaders
+4. [Logs](guides/logs.md): your Python logs, live
+5. [Actions](guides/actions.md): buttons calling your Python functions
+6. [Tables](guides/tables.md): keyed rows, row actions and rows loaded from your data
+7. [Authentication](guides/authentication.md): public and private pages and actions
+8. [Persistent Storage](guides/persistent-storage.md): keeping widget state across restarts
+9. [Bigger Dashboard](guides/bigger-dashboard.md): one module per page
+10. [Custom Widgets](guides/custom-widgets.md): your own widget, in Python and JavaScript
+11. [Testing](guides/testing.md): checking pages, actions and loaders

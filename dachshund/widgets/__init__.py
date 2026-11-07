@@ -6,6 +6,7 @@ from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.chart.timeseries import TimeSeriesChart
+from dachshund.widgets.logs.logs import Logs
 from dachshund.widgets.number.number import Number
 from dachshund.widgets.persistable import PersistableWidget
 from dachshund.widgets.query import TableQuery
@@ -19,6 +20,7 @@ __all__ = [
     "Button",
     "KeyedWidget",
     "LineChart",
+    "Logs",
     "Number",
     "PersistableWidget",
     "Table",

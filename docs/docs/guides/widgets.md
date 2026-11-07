@@ -21,6 +21,7 @@ dachshund.emit("commands", name="/deploy", value=1)
 | [LineChart](../reference/line-chart.md) | One field against another | `x` and `y` | `emit("load", requests=120, latency=96)` |
 | [BarChart](../reference/bar-chart.md) | A total, or another [aggregate](#aggregating), per category | `x` for the category, `y` aggregated | `emit("commands", name="/deploy", value=1)` |
 | [Table](../reference/table.md) | One row per event or key | the fields named in `columns` | `emit("sessions", user="ada", ip="10.0.0.1")` |
+| [Logs](../reference/logs.md) | Python log lines, newest first | its `logger`, from `logging` | `logging.getLogger("myapp").info("started")`, see [Logs](logs.md) |
 | [Button](../reference/button.md) | Buttons running actions | nothing | see [Actions](actions.md) |
 
 Fields a widget doesn't read are ignored. A number can be an `int`, a `float`, a numeric string, a `datetime` or a `timedelta`. A field that's missing or not a number leaves a gap, and logs a warning once.
@@ -88,7 +89,7 @@ An aggregate is refreshed with each event of its source and on page load. A coun
 
 ## How long events are kept
 
-Each widget is built from the latest 500 events of its source. After 30 minutes, events are rolled up into one bucket per minute, kept for good, holding how many events it saw and the count, sum, min and max of each numeric field. Line and time series charts draw a bucket as one averaged point. Each source's newest event always stays as it was emitted.
+Each widget is built from the latest 500 events of its source. After 30 minutes, events are rolled up into one bucket per minute, kept for good, holding how many events it saw and the count, sum, min and max of each numeric field. Line and time series charts draw a bucket as one averaged point. Each source's newest event always stays as it was emitted, and a [Logs](logs.md) widget's source keeps its newest `keep` lines.
 
 Aggregates read those buckets, so they're exact for the last 30 minutes and accurate to the minute before that. Distinct values are only kept for the fields a `"distinct"` widget reads.
 

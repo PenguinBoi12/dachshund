@@ -63,7 +63,11 @@ async def card(
     With `runnable`, actions not in it get no button.
     """
     if widget.paginated:
-        kept = await dashboard.events.events(widget.source, rollups=widget.rollup_safe)
+        kept = await dashboard.events.events(
+            widget.source,
+            rollups=widget.rollup_safe,
+            limit=getattr(widget, "keep", None),
+        )
         payload = await widget.page(
             kept, TableQuery(), dashboard.context, dashboard.host_loop
         )
@@ -231,6 +235,9 @@ def table_query(request: web.Request) -> TableQuery:
         descending=params.get("dir") == "desc",
         offset=max(0, _integer(params.get("offset"))),
         limit=min(limit, MAX_LIMIT) if limit > 0 else None,
+        levels=frozenset(
+            number for number in map(_integer, params.getall("level", [])) if number > 0
+        ),
     )
 
 
@@ -256,7 +263,9 @@ async def widget_page(request: web.Request) -> web.Response:
     if not await can_see_page(request, dashboard.widget_page(widget.name)):
         raise denied(request, page=False)
 
-    kept = await dashboard.events.events(widget.source, rollups=widget.rollup_safe)
+    kept = await dashboard.events.events(
+        widget.source, rollups=widget.rollup_safe, limit=getattr(widget, "keep", None)
+    )
     payload = await widget.page(
         kept, table_query(request), dashboard.context, dashboard.host_loop
     )

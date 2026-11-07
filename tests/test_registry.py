@@ -751,3 +751,23 @@ def test_init_with_a_timezone__expect_it_kept() -> None:
 def test_dashboard_with_an_unknown_timezone__expect_an_error() -> None:
     with pytest.raises(Exception, match="No time zone found"):
         Dashboard(path=":memory:", timezone="Mars/Olympus")
+
+
+def test_stop_and_start__expect_widgets_unbound_then_bound_again() -> None:
+    calls: list[str] = []
+
+    class Tracked(BarChart):
+        def bind(self, dashboard: Any) -> None:
+            calls.append("bind")
+
+        def unbind(self) -> None:
+            calls.append("unbind")
+
+    dashboard = Dashboard(port=0, path=":memory:")
+    with dashboard.row():
+        dashboard.add(Tracked("commands", x="name"))
+
+    dashboard.start()
+    dashboard.stop()
+
+    assert calls == ["bind", "bind", "unbind"]

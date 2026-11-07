@@ -139,11 +139,17 @@ class Dashboard:
         with suppress(RuntimeError):
             self.host_loop = asyncio.get_running_loop()
 
+        for widget in self.widgets.values():
+            widget.bind(self)
+
         self.runtime.start()
 
     def stop(self) -> None:
         """Stop serving the dashboard. `start()` serves it again."""
         self.runtime.stop()
+
+        for widget in self.widgets.values():
+            widget.unbind()
 
     def close(self) -> None:
         """Stop serving and close the raw events file.
@@ -390,13 +396,17 @@ class Dashboard:
             raise ValueError(f"Page {page!r} has tabs, put widgets on one.")
 
         self.widgets[widget.name] = widget
+        widget.bind(self)
 
         if page is not None:
             self.placements[widget.name] = page
 
     def _unregister(self, name: str) -> None:
-        self.widgets.pop(name, None)
+        widget = self.widgets.pop(name, None)
         self.placements.pop(name, None)
+
+        if widget is not None:
+            widget.unbind()
 
     def _builder(self, page: str) -> Builder:
         target = self.page(page)

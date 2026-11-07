@@ -12,6 +12,7 @@ AppFactory = Callable[[], web.Application]
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 1212
+RUNTIME_THREAD = "dachshund-runtime"
 
 STARTUP_TIMEOUT = 10.0
 SHUTDOWN_TIMEOUT = 5.0
@@ -93,7 +94,7 @@ class Runtime:
 
         self._thread = threading.Thread(
             target=self._run,
-            name="dachshund-runtime",
+            name=RUNTIME_THREAD,
             daemon=True,
         )
         self._thread.start()

@@ -44,6 +44,19 @@ def distinct_fields(dashboard: Dashboard) -> dict[str, set[str]]:
     return fields
 
 
+def kept_raw(dashboard: Dashboard) -> dict[str, int]:
+    """How many of its newest events each source keeps raw, the largest `keep` asked."""
+    keep: dict[str, int] = {}
+
+    for widget in dashboard.widgets.values():
+        lines = getattr(widget, "keep", None)
+
+        if lines is not None:
+            keep[widget.source] = max(keep.get(widget.source, 1), lines)
+
+    return keep
+
+
 async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, Any]]:
     """Build what the open pages need to apply for a batch of events.
 
@@ -197,7 +210,9 @@ async def pump(app: web.Application, hydrated: set[str] | None = None) -> None:
             events = dashboard.drain()
             await dashboard.events.append(events)
 
-            await dashboard.events.compact(distinct_fields(dashboard))
+            await dashboard.events.compact(
+                distinct_fields(dashboard), kept_raw(dashboard)
+            )
 
             await broadcast(app, await updates(dashboard, events))
         except Exception:

@@ -75,6 +75,7 @@ nav:
       - Running with Your App: guides/running.md
       - Pages & Layout: guides/pages.md
       - Widgets & Events: guides/widgets.md
+      - Logs: guides/logs.md
       - Actions: guides/actions.md
       - Tables: guides/tables.md
       - Authentication: guides/authentication.md
@@ -98,6 +99,7 @@ nav:
       - Button: reference/button.md
       - Table: reference/table.md
       - Text: reference/text.md
+      - Logs: reference/logs.md
       - Events: reference/events.md
       - Runtime: reference/runtime.md
       - Storage: reference/storage.md
