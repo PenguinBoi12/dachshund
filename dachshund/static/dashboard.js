@@ -77,6 +77,51 @@
     setTimeout(() => item.remove(), TOAST_DURATION);
   };
 
+  const cardOf = (name) =>
+    document.querySelector(`[data-widget="${CSS.escape(name)}"]`);
+
+  // One widget at a time fills the window, named in the URL as `?view=`
+  // so the link opens on it.
+  const view = (widgets, name) => {
+    const current = document.querySelector(".card.expanded");
+    const card = name ? cardOf(name) : null;
+
+    if (current === card) {
+      return;
+    }
+
+    for (const [shown, expanded] of [
+      [current, false],
+      [card, true],
+    ]) {
+      if (!shown) continue;
+
+      const toggle = shown.querySelector("[data-expand]");
+      const widget = widgets.get(shown.dataset.widget);
+
+      shown.classList.toggle("expanded", expanded);
+      toggle.setAttribute("aria-pressed", String(expanded));
+      toggle.textContent = expanded ? "⤡" : "⤢";
+      toggle.title = expanded ? "Close" : "Expand";
+
+      if (widget) {
+        window.Dachshund.renderers[widget.type].expand?.(widget, expanded);
+      }
+    }
+
+    document.body.classList.toggle("viewing", Boolean(card));
+
+    const url = new URL(location.href);
+
+    if (card) {
+      url.searchParams.set("view", name);
+    } else {
+      url.searchParams.delete("view");
+    }
+
+    history.replaceState(null, "", url);
+  };
+
   const runAction = async (button) => {
     if (button.dataset.confirm === "true" && !confirm(`Run "${button.textContent}"?`)) {
       return;
@@ -114,13 +159,30 @@
     }
   };
 
-  document.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-action]");
+  document.addEventListener("DOMContentLoaded", () => {
+    const widgets = mount();
 
-    if (button) {
-      runAction(button);
-    }
+    document.addEventListener("click", (event) => {
+      const action = event.target.closest("[data-action]");
+      const expand = event.target.closest("[data-expand]");
+
+      if (action) {
+        runAction(action);
+      } else if (expand) {
+        const card = expand.closest("[data-widget]");
+        const open = card.classList.contains("expanded");
+
+        view(widgets, open ? null : card.dataset.widget);
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        view(widgets, null);
+      }
+    });
+
+    view(widgets, new URLSearchParams(location.search).get("view"));
+    listen(widgets);
   });
-
-  document.addEventListener("DOMContentLoaded", () => listen(mount()));
 })();

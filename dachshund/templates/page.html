@@ -5,7 +5,10 @@
          data-widget="{{ widget.name }}"
          data-type="{{ widget.type }}"
          data-payload="{{ widget.payload }}">
-  <h2 class="card-title">{{ widget.title }}</h2>
+  <div class="card-head">
+    <h2 class="card-title">{{ widget.title }}</h2>
+    <button type="button" class="card-expand" data-expand aria-pressed="false" aria-label="Expand {{ widget.title }}" title="Expand">⤢</button>
+  </div>
   <div class="card-content"></div>
   {% if widget.actions %}
   <div class="card-actions">

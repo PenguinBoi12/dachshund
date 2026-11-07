@@ -19,6 +19,7 @@
   };
 
   const SEARCH_DELAY = 250;
+  const EXPANDED_PAGE_SIZE = 50;
 
   const header = (state, column, sortable) => {
     const th = document.createElement("th");
@@ -214,6 +215,7 @@
         descending: payload.descending ?? false,
         offset: 0,
         limit: payload.limit,
+        pageSize: payload.limit,
       };
 
       state.search = searchBox(state);
@@ -227,6 +229,12 @@
     // on screen with the current search, sort and offset.
     replace(state) {
       fetchPage(state);
+    },
+    // An expanded table has room for a longer page.
+    expand(state, expanded) {
+      state.limit = expanded ? EXPANDED_PAGE_SIZE : state.pageSize;
+      state.offset = 0;
+      return fetchPage(state);
     },
   });
 })();

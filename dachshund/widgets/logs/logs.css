@@ -7,6 +7,11 @@
   font-size: 12px;
 }
 
+.card.expanded .card-content.logs {
+  height: auto;
+  flex: 1 1 0;
+}
+
 .logs-controls {
   display: flex;
   gap: 8px;
@@ -22,7 +27,8 @@
   background: transparent;
   border: 1px solid var(--control-border);
   border-radius: var(--radius-control);
-  padding: 5px 9px;
+  height: var(--control-height);
+  padding: 0 12px;
 }
 
 .logs-controls input {
