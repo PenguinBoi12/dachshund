@@ -11,6 +11,7 @@ import dachshund
 from dachshund import registry
 from dachshund.layout import Column, Page, Row
 from dachshund.registry import Dashboard
+from dachshund.runtime.queue import QUEUE_SIZE
 from dachshund.runtime.ws import PUMP_INTERVAL
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
@@ -218,26 +219,15 @@ def test_row_of_a_duplicate_name__expect_value_error() -> None:
             dashboard.add(TimeSeriesChart("latency"))
 
 
-def test_watching__expect_the_widgets_fed_by_a_source() -> None:
-    dashboard = Dashboard(path=":memory:")
-    graph = TimeSeriesChart("latency", source="request")
-    with dashboard.row():
-        dashboard.add(graph)
-    with dashboard.row():
-        dashboard.add(TimeSeriesChart("errors"))
-
-    assert dashboard.watching("request") == [graph]
-
-
 def test_drain__expect_the_queued_events_returned_oldest_first() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.emit("latency", value=96)
     dashboard.emit("latency", value=108)
 
-    drained = dashboard.drain()
+    drained = dashboard.queue.drain()
 
     assert [event.payload["value"] for event in drained] == [96, 108]
-    assert dashboard.drain() == []
+    assert dashboard.queue.drain() == []
 
 
 @pytest.mark.asyncio
@@ -246,7 +236,7 @@ async def test_drain_then_append__expect_the_events_kept() -> None:
     dashboard.emit("latency", value=96)
     dashboard.emit("latency", value=108)
 
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     assert len(await dashboard.events.events("latency")) == 2
 
@@ -254,11 +244,11 @@ async def test_drain_then_append__expect_the_events_kept() -> None:
 def test_emit_past_the_queue_size__expect_the_extras_dropped() -> None:
     dashboard = Dashboard(path=":memory:")
 
-    for _ in range(registry.QUEUE_SIZE + 5):
+    for _ in range(QUEUE_SIZE + 5):
         dashboard.emit("latency", value=96)
 
-    assert dashboard.dropped == 5
-    assert len(dashboard.drain()) == registry.QUEUE_SIZE
+    assert dashboard.queue.dropped == 5
+    assert len(dashboard.queue.drain()) == QUEUE_SIZE
 
 
 def test_emit_past_the_queue_size__expect_one_warning_logged(
@@ -267,7 +257,7 @@ def test_emit_past_the_queue_size__expect_one_warning_logged(
     dashboard = Dashboard(path=":memory:")
 
     with caplog.at_level(logging.WARNING, logger="dachshund"):
-        for _ in range(registry.QUEUE_SIZE + 5):
+        for _ in range(QUEUE_SIZE + 5):
             dashboard.emit("latency", value=96)
 
     assert caplog.text.count("event queue is full") == 1
@@ -279,13 +269,13 @@ def test_emit_after_the_queue_drains__expect_a_new_streak_logged_again(
     dashboard = Dashboard(path=":memory:")
 
     with caplog.at_level(logging.WARNING, logger="dachshund"):
-        for _ in range(registry.QUEUE_SIZE + 1):
+        for _ in range(QUEUE_SIZE + 1):
             dashboard.emit("latency", value=96)
 
-        dashboard.drain()
+        dashboard.queue.drain()
         caplog.clear()
 
-        for _ in range(registry.QUEUE_SIZE + 1):
+        for _ in range(QUEUE_SIZE + 1):
             dashboard.emit("latency", value=96)
 
     assert caplog.text.count("event queue is full") == 1
@@ -300,7 +290,7 @@ def test_emit_from_another_thread__expect_it_queued() -> None:
     thread.start()
     thread.join(5)
 
-    assert len(dashboard.drain()) == 1
+    assert len(dashboard.queue.drain()) == 1
 
 
 def test_module_level_registration__expect_the_default_dashboard() -> None:
@@ -311,7 +301,7 @@ def test_module_level_registration__expect_the_default_dashboard() -> None:
     dachshund.emit("latency", value=96)
 
     assert dachshund.default().widgets == {"latency": graph}
-    assert len(dachshund.default().drain()) == 1
+    assert len(dachshund.default().queue.drain()) == 1
 
 
 def test_widgets_registered_before_init__expect_them_kept() -> None:
@@ -339,14 +329,14 @@ def test_emit_with_several_fields__expect_them_all_kept() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.emit("command", name="/ban", issuer="tomcat")
 
-    assert dashboard.drain()[0].payload == {"name": "/ban", "issuer": "tomcat"}
+    assert dashboard.queue.drain()[0].payload == {"name": "/ban", "issuer": "tomcat"}
 
 
 def test_emit_of_a_field_named_source__expect_no_collision() -> None:
     dashboard = Dashboard(path=":memory:")
     dashboard.emit("request", source="webhook")
 
-    assert dashboard.drain()[0].payload == {"source": "webhook"}
+    assert dashboard.queue.drain()[0].payload == {"source": "webhook"}
 
 
 def test_persisting_chart_without_storage__expect_value_error() -> None:
@@ -436,7 +426,7 @@ def test_row_on_a_named_page__expect_its_widgets_there_side_by_side() -> None:
     assert dashboard.layout("requests") == [
         Row([Column(["latency"]), Column(["errors"])])
     ]
-    assert dashboard.widget_page("errors") == "requests"
+    assert dashboard.placements.get("errors", "default") == "requests"
 
 
 def test_rows__expect_them_in_call_order() -> None:
@@ -480,7 +470,7 @@ def test_widget_page_never_placed__expect_default() -> None:
     with dashboard.row():
         dashboard.add(TimeSeriesChart("latency"))
 
-    assert dashboard.widget_page("latency") == "default"
+    assert dashboard.placements.get("latency", "default") == "default"
 
 
 def test_widget_page_placed_by_row__expect_its_page() -> None:
@@ -488,7 +478,7 @@ def test_widget_page_placed_by_row__expect_its_page() -> None:
     with dashboard.row(page="requests"):
         dashboard.add(TimeSeriesChart("latency"), page="requests")
 
-    assert dashboard.widget_page("latency") == "requests"
+    assert dashboard.placements.get("latency", "default") == "requests"
 
 
 def test_module_level_page_and_row__expect_the_default_dashboard() -> None:
@@ -525,7 +515,7 @@ def test_row_with_a_failing_widget__expect_nothing_registered() -> None:
             dashboard.add(TimeSeriesChart("errors"))
 
     assert list(dashboard.widgets) == ["errors"]
-    assert dashboard.widget_page("latency") == "default"
+    assert dashboard.placements.get("latency", "default") == "default"
     assert dashboard.layout() == [Row([Column(["errors"])])]
 
 
@@ -552,7 +542,7 @@ def test_include__expect_pages_tabs_widgets_and_actions_registered() -> None:
         Row([Column(["errors"]), Column(["latency"])])
     ]
     assert dashboard.layout("activity/commands") == [Row([Column(["on_command"])])]
-    assert dashboard.widget_page("on_command") == "activity/commands"
+    assert dashboard.placements.get("on_command", "default") == "activity/commands"
     assert dashboard.actions["flush"].handler is flush
     assert overview.included and commands.included
 
@@ -664,8 +654,8 @@ def test_module_level_row_and_include__expect_the_default_dashboard() -> None:
         dachshund.add(TimeSeriesChart("errors"), page="errors")
 
     dashboard = dachshund.default()
-    assert dashboard.widget_page("latency") == "overview"
-    assert dashboard.widget_page("errors") == "errors"
+    assert dashboard.placements.get("latency", "default") == "overview"
+    assert dashboard.placements.get("errors", "default") == "errors"
 
 
 def test_add_outside_a_row__expect_value_error() -> None:

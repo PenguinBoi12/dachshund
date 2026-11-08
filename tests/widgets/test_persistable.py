@@ -9,7 +9,7 @@ from dachshund.widgets.button.button import Button
 from dachshund.widgets.chart.bar import BarChart
 from dachshund.widgets.chart.line import LineChart
 from dachshund.widgets.number.number import Number
-from dachshund.widgets.persistable import PersistableWidget, persisting
+from dachshund.widgets.persistable import PersistableWidget, is_persisting
 from dachshund.widgets.table.table import Table
 from dachshund.widgets.text.text import Text
 
@@ -53,12 +53,12 @@ def test_builtin_widgets__expect_only_stateful_ones_persistable() -> None:
 
 
 def test_persisting_of_a_plain_widget__expect_false() -> None:
-    assert not persisting(Widget("latency", source="latency"))
+    assert not is_persisting(Widget("latency", source="latency"))
 
 
 def test_persisting_without_persist__expect_false() -> None:
-    assert not persisting(Counter("hits", source="hits"))
+    assert not is_persisting(Counter("hits", source="hits"))
 
 
 def test_persisting_with_persist__expect_true() -> None:
-    assert persisting(Counter("hits", source="hits", persist=True))
+    assert is_persisting(Counter("hits", source="hits", persist=True))

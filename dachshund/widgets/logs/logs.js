@@ -19,7 +19,6 @@
 
   const two = (number) => String(number).padStart(2, "0");
 
-  // HH:MM:SS whatever the browser's locale, so it fits its column.
   const time = (seconds) => {
     if (seconds == null) return "";
 
@@ -27,7 +26,6 @@
     return `${two(at.getHours())}:${two(at.getMinutes())}:${two(at.getSeconds())}`;
   };
 
-  // textContent throughout: log lines are application text, never markup.
   const line = (fields) => {
     const row = document.createElement("div");
     const level = span("logs-level", fields.level ?? "");
@@ -59,8 +57,6 @@
   const name = (number) =>
     LEVELS.find(([, value]) => value === number)?.[0] ?? String(number);
 
-  // One toggle per captured level. None picked means all of them, so every
-  // toggle shows pressed.
   const drawToggles = (state) => {
     state.toggles.replaceChildren(
       ...state.offered.map((number) => {
@@ -76,7 +72,6 @@
     );
   };
 
-  // Turning every level on, or the last one off, goes back to all of them.
   const flip = (state, number) => {
     const shown = new Set(state.levels.size ? state.levels : state.offered);
 
@@ -114,7 +109,6 @@
       state.container.replaceChildren(span("logs-empty", "No lines yet."));
     }
 
-    // Back to the newest line.
     state.container.scrollTop = 0;
 
     const shown = rows.length ? `${state.offset + 1}–${state.offset + rows.length}` : "0";
@@ -224,7 +218,6 @@
 
       return state;
     },
-    // A new line only signals a refetch, held while the view is paused.
     replace(state) {
       if (!state.paused) fetchPage(state);
     },

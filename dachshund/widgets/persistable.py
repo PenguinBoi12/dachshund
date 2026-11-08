@@ -59,6 +59,6 @@ class PersistableWidget(Widget, ABC):
         """Seed this widget's state from a saved snapshot."""
 
 
-def persisting(widget: Widget) -> TypeGuard[PersistableWidget]:
+def is_persisting(widget: Widget) -> TypeGuard[PersistableWidget]:
     """Whether `widget` was built with `persist=True`."""
     return isinstance(widget, PersistableWidget) and widget.persist

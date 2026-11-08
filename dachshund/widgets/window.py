@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, get_args
 from zoneinfo import ZoneInfo
@@ -5,6 +6,20 @@ from zoneinfo import ZoneInfo
 Period = Literal["day", "week", "month"]
 PERIODS: tuple[str, ...] = get_args(Period)
 DAY = 86400.0
+
+
+@dataclass(frozen=True)
+class Window:
+    """What a widget aggregates from stored events: `aggregate` of each field.
+
+    `over` is how far back from now, `every` the length of a bucket. Without
+    `every`, the whole window is one bucket.
+    """
+
+    fields: tuple[str, ...]
+    aggregate: str
+    over: timedelta | Period | None = None
+    every: timedelta | None = None
 
 
 def since(
@@ -18,8 +33,8 @@ def since(
     ## Example
 
     ```python
-    since(timedelta(hours=1), now, zone)  # an hour ago
-    since("day", now, ZoneInfo("America/Toronto"))  # Toronto's last midnight
+    since(timedelta(hours=1), now, zone)
+    since("day", now, ZoneInfo("America/Toronto"))
     ```
     """
     if over is None:
@@ -55,8 +70,8 @@ def boundaries(
     ## Example
 
     ```python
-    boundaries(since, now, None, zone, 500)  # [since, now]
-    boundaries(None, now, timedelta(days=1), zone, 7)  # the last 7 local days
+    boundaries(since, now, None, zone, 500)
+    boundaries(None, now, timedelta(days=1), zone, 7)
     ```
     """
     if every is None:
@@ -96,7 +111,6 @@ def _days(
     edges = []
     day = first
 
-    # Wall-clock steps, so a day across a DST change lasts 23 or 25 hours.
     while day.timestamp() < end:
         edges.append(day.timestamp())
         day = (day + timedelta(days=days)).replace(tzinfo=zone)

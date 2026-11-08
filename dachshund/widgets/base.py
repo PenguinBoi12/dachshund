@@ -2,12 +2,13 @@ import asyncio
 import logging
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar, Mapping, Sequence
 
 from dachshund.actions import Context
-from dachshund.storage.events import Event
+from dachshund.storage.events import Bucket, Event
 from dachshund.widgets.query import TableQuery
 from dachshund.widgets.value import numeric
+from dachshund.widgets.window import Window
 
 logger = logging.getLogger("dachshund")
 
@@ -163,6 +164,18 @@ class Widget:
     def update(self, event: Event) -> dict[str, Any] | None:
         """Build the change a single new event makes, if it makes one."""
         raise NotImplementedError
+
+    def window(self) -> Window | None:
+        """The stored window this widget aggregates, `None` to render its kept events."""
+        return None
+
+    def render_buckets(self, buckets: Mapping[str, Sequence[Bucket]]) -> dict[str, Any]:
+        """Build the whole card from `window()`'s buckets, by field."""
+        raise NotImplementedError
+
+    def raw_events(self) -> int | None:
+        """How many of its source's newest events stay raw, `None` for the default."""
+        return None
 
     def bind(self, dashboard: Any) -> None:
         """Called when the widget goes on `dashboard`, and when it starts again."""

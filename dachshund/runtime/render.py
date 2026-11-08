@@ -7,33 +7,33 @@ from dachshund.widgets.base import Widget
 from dachshund.widgets.window import boundaries, since
 
 
-def windowed(widget: Widget) -> bool:
-    """Whether `widget` is built from stored buckets over a window."""
-    return bool(getattr(widget, "windowed", False))
-
-
 async def payload(dashboard: Dashboard, widget: Widget) -> dict[str, Any]:
     """What the browser draws for a non-paginated `widget`, from what's stored."""
-    if windowed(widget):
-        now = datetime.now(tz=UTC)
-        zone = dashboard.timezone
-        edges = boundaries(
-            since(getattr(widget, "over", None), now, zone),
-            now.timestamp(),
-            getattr(widget, "every", None),
-            zone,
-            DEFAULT_LIMIT,
+    window = widget.window()
+
+    if window is None:
+        events = await dashboard.events.events(
+            widget.source, rollups=widget.rollup_safe, limit=widget.raw_events()
         )
-        distinct = getattr(widget, "aggregate", None) == "distinct"
-        buckets = {
-            field: await dashboard.events.summarize(
-                widget.source, field, boundaries=edges, distinct=distinct
-            )
-            for field in getattr(widget, "fields")
-        }
+        return widget.render(events)
 
-        return widget.render_buckets(buckets)  # type: ignore[attr-defined, no-any-return]
+    now = datetime.now(tz=UTC)
+    zone = dashboard.timezone
+    edges = boundaries(
+        since(window.over, now, zone),
+        now.timestamp(),
+        window.every,
+        zone,
+        DEFAULT_LIMIT,
+    )
+    buckets = {
+        field: await dashboard.events.summarize(
+            widget.source,
+            field,
+            boundaries=edges,
+            distinct=window.aggregate == "distinct",
+        )
+        for field in window.fields
+    }
 
-    events = await dashboard.events.events(widget.source, rollups=widget.rollup_safe)
-
-    return widget.render(events)
+    return widget.render_buckets(buckets)

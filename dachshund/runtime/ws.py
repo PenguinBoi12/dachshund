@@ -6,13 +6,14 @@ from typing import Any, AsyncIterator
 from aiohttp import WSCloseCode, web
 
 from dachshund.actions import resolve_row_actions
+from dachshund.layout import DEFAULT_PAGE
 from dachshund.registry import Dashboard
 from dachshund.runtime import render
-from dachshund.runtime.access import authorized, can_see_page, denied
+from dachshund.runtime.access import can_see_page, denied, is_authorized, is_same_origin
 from dachshund.runtime.keys import CLIENTS, DASHBOARD
 from dachshund.storage.events import Event
 from dachshund.widgets.base import Widget
-from dachshund.widgets.persistable import PersistableWidget, persisting
+from dachshund.widgets.persistable import PersistableWidget, is_persisting
 
 WS_PATH = "/_ws"
 PUMP_INTERVAL = 0.2
@@ -23,7 +24,7 @@ logger = logging.getLogger("dachshund")
 
 def live_op(widget: Widget) -> str:
     """How a page applies `widget`'s updates: a windowed widget is redrawn whole."""
-    return "replace" if render.windowed(widget) else widget.op
+    return "replace" if widget.window() is not None else widget.op
 
 
 def message(widget: Widget, data: dict[str, Any]) -> dict[str, Any]:
@@ -36,20 +37,20 @@ def distinct_fields(dashboard: Dashboard) -> dict[str, set[str]]:
     fields: dict[str, set[str]] = {}
 
     for widget in dashboard.widgets.values():
-        if getattr(widget, "aggregate", None) == "distinct":
-            fields.setdefault(widget.source, set()).update(
-                getattr(widget, "fields", ())
-            )
+        window = widget.window()
+
+        if window is not None and window.aggregate == "distinct":
+            fields.setdefault(widget.source, set()).update(window.fields)
 
     return fields
 
 
 def kept_raw(dashboard: Dashboard) -> dict[str, int]:
-    """How many of its newest events each source keeps raw, the largest `keep` asked."""
+    """How many of its newest events each source keeps raw, the largest asked."""
     keep: dict[str, int] = {}
 
     for widget in dashboard.widgets.values():
-        lines = getattr(widget, "keep", None)
+        lines = widget.raw_events()
 
         if lines is not None:
             keep[widget.source] = max(keep.get(widget.source, 1), lines)
@@ -71,7 +72,7 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
         dashboard.add(TimeSeriesChart("latency"))
     dashboard.emit("latency", value=96)
 
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     await updates(dashboard, events)
     # [{"widget": "latency", "op": "append", "data": {"x": ..., "y": [96.0]}}]
@@ -82,8 +83,10 @@ async def updates(dashboard: Dashboard, events: list[Event]) -> list[dict[str, A
     persisted: dict[str, PersistableWidget] = {}
 
     for event in events:
-        for widget in dashboard.watching(event.source):
-            if persisting(widget):
+        watching = [w for w in dashboard.widgets.values() if w.source == event.source]
+
+        for widget in watching:
+            if is_persisting(widget):
                 widget.accumulate(event)
                 persisted[widget.name] = widget
 
@@ -137,7 +140,7 @@ async def hydrate(dashboard: Dashboard, hydrated: set[str] | None = None) -> Non
         hydrated = set()
 
     for widget in dashboard.widgets.values():
-        if widget.name in hydrated or not persisting(widget):
+        if widget.name in hydrated or not is_persisting(widget):
             continue
 
         try:
@@ -165,7 +168,7 @@ async def broadcast(app: web.Application, messages: list[dict[str, Any]]) -> Non
     dashboard = app[DASHBOARD]
     clients = app[CLIENTS]
     pages = {
-        name: dashboard.widget_page(name)
+        name: dashboard.placements.get(name, DEFAULT_PAGE)
         for name in {message["widget"] for message in messages}
     }
 
@@ -207,7 +210,7 @@ async def pump(app: web.Application, hydrated: set[str] | None = None) -> None:
         try:
             await hydrate(dashboard, hydrated)
 
-            events = dashboard.drain()
+            events = dashboard.queue.drain()
             await dashboard.events.append(events)
 
             await dashboard.events.compact(
@@ -253,8 +256,13 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
     page's updates. Without it, it is sent every update, and so needs
     `authorize` to pass.
     """
+    if not is_same_origin(request):
+        raise web.HTTPForbidden(text="Another site's page can't open this socket.")
+
     page = request.query.get("page")
-    allowed = await can_see_page(request, page) if page else await authorized(request)
+    allowed = (
+        await can_see_page(request, page) if page else await is_authorized(request)
+    )
 
     if not allowed:
         raise denied(request, page=False)

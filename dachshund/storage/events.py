@@ -21,7 +21,6 @@ DISTINCT_CAP = 10_000
 
 logger = logging.getLogger("dachshund")
 
-# Each raw event's rank in its source, newest first, in the order `_select` reads them.
 RANKED = (
     "SELECT id, source, ROW_NUMBER() OVER "
     "(PARTITION BY source ORDER BY at DESC, id DESC) AS rank FROM events"
@@ -53,9 +52,7 @@ MIGRATIONS = [
     """,
 ]
 
-# {field: [count, sum, min, max]} over the readable numbers of each field.
 Stats = dict[str, list[float]]
-# {field: [value, ...]}, a field `None` once it went over `DISTINCT_CAP`.
 Distinct = dict[str, list[str] | None]
 
 
@@ -405,8 +402,6 @@ class EventStore:
             "SELECT bucket_start, payload, count, stats, distinct_values "
             "FROM event_rollups "
             "WHERE source = ? AND bucket_start > ? AND bucket_start < ?",
-            # The rollup overlapping the window's start counts in full: a
-            # window starting mid-bucket would otherwise lose up to a bucket.
             (source, edges[0] - self.bucket, edges[-1]),
         ).fetchall()
 

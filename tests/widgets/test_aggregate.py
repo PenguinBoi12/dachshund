@@ -7,6 +7,7 @@ import pytest
 from dachshund.storage.events import Bucket, Event
 from dachshund.widgets import AggregatedWidget, BarChart, Number, TimeSeriesChart
 from dachshund.widgets.aggregate import aggregated, merged
+from dachshund.widgets.window import Window
 
 
 def bucket(**fields: Any) -> Bucket:
@@ -83,14 +84,15 @@ def test_custom_aggregated_widget_last__expect_the_latest_value() -> None:
     assert gauge.render(
         [Event("latency", {"value": 1}), Event("latency", {"value": 7})]
     ) == {"gauge": 7.0}
-    assert gauge.windowed is False
+    assert gauge.window() is None
 
 
 def test_custom_aggregated_widget_windowed__expect_buckets_aggregated() -> None:
     gauge = Gauge("latency", y="ms", aggregate="average", over=timedelta(hours=1))
 
-    assert gauge.windowed is True
-    assert gauge.fields == ("ms",)
+    assert gauge.window() == Window(
+        fields=("ms",), aggregate="average", over=timedelta(hours=1)
+    )
     assert gauge.render_buckets(
         {"ms": [FULL, bucket(count=1, values=1, sum=20.0)]}
     ) == {"gauge": 20.0}
@@ -171,7 +173,9 @@ def test_timeseries_windowed__expect_a_point_per_bucket_per_field() -> None:
         {"check": [first, second], "command": [second, first]}
     )
 
-    assert chart.windowed is True
+    assert chart.window() == Window(
+        fields=("check", "command"), aggregate="average", every=timedelta(minutes=1)
+    )
     assert payload == {
         "series": ["check", "command"],
         "x": [60.0, 120.0],

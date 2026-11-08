@@ -1,7 +1,6 @@
 import asyncio
 import atexit
 import logging
-import queue
 import threading
 from contextlib import AbstractContextManager, suppress
 from datetime import UTC, datetime
@@ -13,14 +12,14 @@ from aiohttp import web
 from dachshund.actions import Action, Context, make_action
 from dachshund.layout import DEFAULT_PAGE, Builder, Column, Page, Row
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
+from dachshund.runtime.queue import EventQueue
 from dachshund.storage import db
+from dachshund.storage.events import DEFAULT_PATH
 from dachshund.storage.events import MIGRATIONS as EVENTS_MIGRATIONS
-from dachshund.storage.events import DEFAULT_PATH, Event, EventStore
+from dachshund.storage.events import Event, EventStore
 from dachshund.storage.protocol import Storage
 from dachshund.widgets.base import Widget
-from dachshund.widgets.persistable import persisting
-
-QUEUE_SIZE = 10_000
+from dachshund.widgets.persistable import is_persisting
 
 logger = logging.getLogger("dachshund")
 
@@ -109,8 +108,6 @@ class Dashboard:
         self.pages: dict[str, Page] = {}
         self.placements: dict[str, str] = {}
         self._builders: dict[str, Builder] = {}
-        self.dropped = 0
-        self._dropping = False
 
         self._connection, self._executor = db.setup(path, EVENTS_MIGRATIONS)
         self.events = EventStore(self._connection, self._executor)
@@ -120,13 +117,13 @@ class Dashboard:
         self.storage = storage
         self.context: Context = dict(context) if context else {}
         self.authorize = authorize
-        self.login_url: str | None = None
-        self.login: dict[str, Handler] = {}
         self.timezone = ZoneInfo(timezone)
 
         self.runtime = Runtime(self._create_app, host=host, port=port)
-        self.set_login(login_url, login)
-        self._queue: queue.Queue[Event] = queue.Queue(maxsize=QUEUE_SIZE)
+        check_login(login_url, login)
+        self.login_url = login_url
+        self.login: dict[str, Handler] = dict(login or {})
+        self.queue = EventQueue()
 
         self.host_loop: asyncio.AbstractEventLoop | None = None
 
@@ -209,39 +206,6 @@ class Dashboard:
 
         return decorator
 
-    @property
-    def login_page(self) -> str | None:
-        """Where a denied page redirects: `login_url`, or the `login` handler."""
-        return f"{LOGIN_PREFIX}/login" if self.login else self.login_url
-
-    def set_login(
-        self, login_url: str | None, login: Mapping[str, Handler] | None
-    ) -> None:
-        """Set where visitors log in: an application's page, or handlers served here."""
-        if login_url is not None and login:
-            raise ValueError(
-                "Give `login_url` or `login`, not both: there's one place to log in."
-            )
-
-        if login:
-            if "login" not in login:
-                raise ValueError(
-                    "`login` needs a 'login' handler, where denied pages redirect."
-                )
-
-            for name in login:
-                if not name or "/" in name:
-                    raise ValueError(
-                        f"Login handler names are one path segment, got {name!r}."
-                    )
-
-            if self.is_running:
-                raise RuntimeError("Give `login` before the dashboard starts.")
-
-            self.login, self.login_url = dict(login), None
-        elif login_url is not None:
-            self.login_url, self.login = login_url, {}
-
     def emit(self, source: str, /, **fields: Any) -> None:
         """Emit an event on the dashboard.
 
@@ -252,44 +216,7 @@ class Dashboard:
         dashboard.emit("command", name="/ban", issuer="tomcat")
         ```
         """
-        event = Event(source=source, payload=fields)
-
-        try:
-            self._queue.put_nowait(event)
-            self._dropping = False
-        except queue.Full:
-            self.dropped += 1
-
-            if not self._dropping:
-                self._dropping = True
-                logger.warning(
-                    "The event queue is full (%d slots), dropping events until "
-                    "it drains. %d dropped so far.",
-                    QUEUE_SIZE,
-                    self.dropped,
-                )
-
-    def drain(self) -> list[Event]:
-        """Pull every queued event off the queue, oldest first.
-
-        Draining alone doesn't persist anything; the caller decides when to
-        `await self.events.append(...)` the batch.
-        """
-        drained = []
-
-        while True:
-            try:
-                event = self._queue.get_nowait()
-            except queue.Empty:
-                break
-
-            drained.append(event)
-
-        return drained
-
-    def watching(self, source: str) -> list[Widget]:
-        """The widgets watching `source`."""
-        return [widget for widget in self.widgets.values() if widget.source == source]
+        self.queue.put(Event(source=source, payload=fields))
 
     def include(self, page: Page) -> Page:
         """Put a page, with its tabs, widgets and actions, on the dashboard.
@@ -403,10 +330,6 @@ class Dashboard:
         """
         self._builder(page).add(widget)
 
-    def widget_page(self, name: str, default: str = DEFAULT_PAGE) -> str:
-        """The page a widget appears on."""
-        return self.placements.get(name, default)
-
     def layout(self, page: str = DEFAULT_PAGE) -> list[Row]:
         """`page`'s rows, in display order.
 
@@ -422,7 +345,7 @@ class Dashboard:
         return list(declared.rows) if declared else []
 
     def _check_storage(self, widget: Widget) -> None:
-        if persisting(widget) and self.storage is None:
+        if is_persisting(widget) and self.storage is None:
             raise ValueError(
                 f"{widget.name!r} wants to persist, but no storage is "
                 "configured. Pass storage=... to Dashboard() or "
@@ -468,6 +391,26 @@ class Dashboard:
         from dachshund.runtime.http import create_app
 
         return create_app(self)
+
+
+def check_login(login_url: str | None, login: Mapping[str, Handler] | None) -> None:
+    """Raise unless `login_url` and `login` name one valid place to log in."""
+    if login_url is not None and login:
+        raise ValueError(
+            "Give `login_url` or `login`, not both: there's one place to log in."
+        )
+
+    if not login:
+        return
+
+    if "login" not in login:
+        raise ValueError(
+            "`login` needs a 'login' handler, where denied pages redirect."
+        )
+
+    for name in login:
+        if not name or "/" in name:
+            raise ValueError(f"Login handler names are one path segment, got {name!r}.")
 
 
 def default(*, path: str = DEFAULT_PATH, storage: Storage | None = None) -> Dashboard:
@@ -540,6 +483,16 @@ def init(
                 "dashboard."
             )
 
+        check_login(login_url, login)
+
+        if login:
+            if dashboard.is_running:
+                raise RuntimeError("Give `login` before the dashboard starts.")
+
+            dashboard.login, dashboard.login_url = dict(login), None
+        elif login_url is not None:
+            dashboard.login_url, dashboard.login = login_url, {}
+
         if dashboard.is_running:
             runtime = dashboard.runtime
 
@@ -565,8 +518,6 @@ def init(
 
         if authorize is not None:
             dashboard.authorize = authorize
-
-        dashboard.set_login(login_url, login)
 
         if timezone is not None:
             dashboard.timezone = ZoneInfo(timezone)

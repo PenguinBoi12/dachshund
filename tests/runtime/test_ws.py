@@ -216,7 +216,7 @@ async def test_updates_of_a_replacing_widget__expect_one_rebuild_per_batch() -> 
     for name in ("/ban", "/help", "/ban"):
         dashboard.emit("commands", name=name, value=1)
 
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -243,7 +243,7 @@ async def test_updates_of_mixed_widgets__expect_each_kind_handled() -> None:
     dashboard.emit("latency", value=96, name="a")
     dashboard.emit("latency", value=108, name="a")
 
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -263,7 +263,7 @@ async def test_updates_with_an_unreadable_x__expect_the_point_dropped() -> None:
     dashboard.emit("perf", requests="many", ms=96)
     dashboard.emit("perf", requests=120, ms=108)
 
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -280,7 +280,7 @@ async def test_updates_with_a_bad_event__expect_the_other_widgets_unaffected() -
 
     dashboard.emit("latency", value="fast")
 
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -384,7 +384,7 @@ async def test_updates_of_a_persisting_widget__expect_it_saved() -> None:
         dashboard.add(BarChart("commands", x="name", persist=True))
 
     dashboard.emit("commands", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
@@ -399,7 +399,7 @@ async def test_updates_of_a_persisting_table__expect_it_saved() -> None:
         dashboard.add(Table("sessions", columns=["user"], key="user", persist=True))
 
     dashboard.emit("sessions", user="ada")
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
@@ -416,7 +416,7 @@ async def test_updates_of_an_untouched_widget__expect_nothing_saved() -> None:
         dashboard.add(BarChart("errors", x="kind", persist=True))
 
     dashboard.emit("commands", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
@@ -435,7 +435,7 @@ async def test_updates_with_a_persisting_and_a_plain_bar__expect_only_the_persis
         dashboard.add(BarChart("recent", x="name", source="calls"))
 
     dashboard.emit("calls", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -452,7 +452,7 @@ async def test_updates_of_a_plain_bar__expect_nothing_accumulated() -> None:
         dashboard.add(chart)
 
     dashboard.emit("commands", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     await updates(dashboard, events)
 
@@ -467,7 +467,7 @@ async def test_updates_of_a_persisting_append_widget__expect_it_saved() -> None:
         dashboard.add(AppendingCounter("hits", source="hits", persist=True))
 
     dashboard.emit("hits", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -502,7 +502,7 @@ async def test_updates_of_a_paginated_widget__expect_a_content_free_ping() -> No
         dashboard.add(Table("sessions", columns=["user"]))
 
     dashboard.emit("sessions", user="ada")
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -516,7 +516,7 @@ async def test_updates_of_a_paginated_widget__expect_events_not_reread() -> None
         dashboard.add(Table("sessions", columns=["user"]))
 
     dashboard.emit("sessions", user="ada")
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
 
     async def fail(source: str) -> list[Event]:
@@ -536,7 +536,7 @@ async def test_updates_of_a_non_paginated_replace_widget__expect_it_unaffected()
         dashboard.add(BarChart("commands", x="name"))
 
     dashboard.emit("commands", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
     messages = await updates(dashboard, events)
 
@@ -587,7 +587,7 @@ async def test_updates_when_storage_raises_for_one_widget__expect_the_others_una
 
     dashboard.emit("broken", name="/x", value=1)
     dashboard.emit("commands", name="/ban", value=1)
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
 
     with caplog.at_level(logging.ERROR, logger="dachshund"):
@@ -714,7 +714,7 @@ async def test_updates_of_a_windowed_timeseries__expect_the_whole_series_replace
 
     dashboard.emit("requests")
     dashboard.emit("requests")
-    events = dashboard.drain()
+    events = dashboard.queue.drain()
     await dashboard.events.append(events)
 
     [update] = await updates(dashboard, events)

@@ -405,7 +405,6 @@
       ...labels.slice(first, last + 1).map((label) => measure.measureText(String(label)).width),
     );
     const slot = plot.bbox.width / devicePixelRatio / (max - min);
-    // Before the chart has a width, every label: it's redrawn once sized.
     const step = slot > 0 ? Math.max(1, Math.ceil((widest + LABEL_GAP) / slot)) : 1;
     const shown = [];
 

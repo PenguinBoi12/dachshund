@@ -2,6 +2,7 @@ import logging
 from urllib.parse import urlencode
 
 from aiohttp import web
+from yarl import URL
 
 from dachshund.actions import run
 from dachshund.registry import LOGIN_PREFIX, Dashboard
@@ -10,6 +11,38 @@ from dachshund.runtime.keys import DASHBOARD
 AUTHORIZED = "dachshund.authorized"
 
 logger = logging.getLogger("dachshund")
+
+
+def login_page(dashboard: Dashboard) -> str | None:
+    """Where a denied page redirects: `login_url`, or the `login` handler."""
+    return f"{LOGIN_PREFIX}/login" if dashboard.login else dashboard.login_url
+
+
+def is_same_origin(request: web.Request) -> bool:
+    """Whether `request` comes from a page of this dashboard, or from outside a browser.
+
+    A browser sends `Origin` with a WebSocket or a `fetch()`. It has to match
+    the dashboard's host, or the host a reverse proxy forwarded it from.
+    """
+    origin = request.headers.get("Origin")
+
+    if origin is None:
+        return True
+
+    try:
+        sent = URL(origin)
+        hosts = [request.host, *request.headers.get("X-Forwarded-Host", "").split(",")]
+
+        return any(
+            host.strip()
+            and (
+                URL.build(scheme=sent.scheme, authority=host.strip()).origin()
+                == sent.origin()
+            )
+            for host in hosts
+        )
+    except ValueError:
+        return False
 
 
 def is_public_page(dashboard: Dashboard, path: str) -> bool:
@@ -28,7 +61,7 @@ def is_public_action(dashboard: Dashboard, name: str) -> bool:
     return action is not None and action.public
 
 
-async def authorized(request: web.Request) -> bool:
+async def is_authorized(request: web.Request) -> bool:
     """Whether the dashboard's `authorize` lets `request` in, asked once per request."""
     if AUTHORIZED not in request:
         dashboard = request.app[DASHBOARD]
@@ -50,11 +83,13 @@ async def authorized(request: web.Request) -> bool:
 
 
 async def can_see_page(request: web.Request, path: str) -> bool:
-    return is_public_page(request.app[DASHBOARD], path) or await authorized(request)
+    return is_public_page(request.app[DASHBOARD], path) or await is_authorized(request)
 
 
 async def can_run_action(request: web.Request, name: str) -> bool:
-    return is_public_action(request.app[DASHBOARD], name) or await authorized(request)
+    return is_public_action(request.app[DASHBOARD], name) or await is_authorized(
+        request
+    )
 
 
 async def runnable_actions(request: web.Request) -> set[str]:
@@ -66,7 +101,7 @@ async def runnable_actions(request: web.Request) -> set[str]:
 
 def login_location(request: web.Request) -> str | None:
     """The login page, coming back to `request`'s URL, `None` without one."""
-    login_url = request.app[DASHBOARD].login_page
+    login_url = login_page(request.app[DASHBOARD])
 
     if login_url is None:
         return None
@@ -83,7 +118,7 @@ async def account(request: web.Request) -> dict[str, str] | None:
     if dashboard.authorize is None or location is None:
         return None
 
-    if not await authorized(request):
+    if not await is_authorized(request):
         return {"label": "Log in", "url": location}
 
     if "logout" in dashboard.login:

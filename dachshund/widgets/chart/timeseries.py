@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Mapping, Sequence
 from dachshund.storage.events import Bucket, Event
 from dachshund.widgets.aggregate import WINDOWED, aggregated, check, check_over
 from dachshund.widgets.chart.line import LineChart
-from dachshund.widgets.window import Period
+from dachshund.widgets.window import Period, Window
 
 
 @dataclass
@@ -77,15 +77,17 @@ class TimeSeriesChart(LineChart):
         if self.over is not None:
             check_over(self.name, self.over)
 
-    @property
-    def windowed(self) -> bool:
-        """Whether this chart is built from stored buckets, not its kept events."""
-        return self.aggregate is not None
+    def window(self) -> Window | None:
+        """`aggregate` of each line per `every`, `None` for a point per event."""
+        if self.aggregate is None:
+            return None
 
-    @property
-    def fields(self) -> tuple[str, ...]:
-        """The fields summarized, one line each."""
-        return self.series
+        return Window(
+            fields=self.series,
+            aggregate=self.aggregate,
+            over=self.over,
+            every=self.every,
+        )
 
     def at(self, event: Event) -> float:
         """When the event happened, as the seconds uPlot expects."""

@@ -4,7 +4,7 @@ from typing import Any, Mapping, Sequence
 
 from dachshund.storage.events import Bucket, Event
 from dachshund.widgets.persistable import PersistableWidget
-from dachshund.widgets.window import PERIODS, Period
+from dachshund.widgets.window import PERIODS, Period, Window
 
 AGGREGATES = ("last", "count", "sum", "average", "min", "max", "distinct")
 WINDOWED = AGGREGATES[1:]
@@ -16,7 +16,7 @@ def aggregated(bucket: Bucket, aggregate: str) -> float | None:
     ## Example
 
     ```python
-    aggregated(bucket, "average")  # bucket.sum / bucket.values
+    aggregated(bucket, "average")
     ```
     """
     if aggregate == "count":
@@ -143,15 +143,12 @@ class AggregatedWidget(PersistableWidget):
                 "already: persist=True is only for aggregate='last'."
             )
 
-    @property
-    def windowed(self) -> bool:
-        """Whether this widget is built from stored buckets, not its kept events."""
-        return self.aggregate in WINDOWED
+    def window(self) -> Window | None:
+        """`aggregate` of `y` over `over`, `None` for `"last"`."""
+        if self.aggregate == "last":
+            return None
 
-    @property
-    def fields(self) -> tuple[str, ...]:
-        """The fields summarized."""
-        return (self.y,)
+        return Window(fields=(self.y,), aggregate=self.aggregate, over=self.over)
 
     def render_value(self, value: float | None) -> dict[str, Any]:
         """The payload drawn for `value`, `None` before there's one to show."""

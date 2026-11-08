@@ -16,12 +16,13 @@ from dachshund.runtime.access import (
     can_run_action,
     can_see_page,
     denied,
+    is_same_origin,
     runnable_actions,
 )
 from dachshund.runtime.keys import CLIENTS, DASHBOARD, TEMPLATES
+from dachshund.runtime.ws import WS_PATH, pumping, websocket
 from dachshund.widgets.base import WIDGETS, Widget
 from dachshund.widgets.query import TableQuery
-from dachshund.runtime.ws import WS_PATH, pumping, websocket
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PACKAGE_ROOT / "templates"
@@ -67,7 +68,7 @@ async def card(
         kept = await dashboard.events.events(
             widget.source,
             rollups=widget.rollup_safe,
-            limit=getattr(widget, "keep", None),
+            limit=widget.raw_events(),
         )
         payload = await widget.page(
             kept, TableQuery(), dashboard.context, dashboard.host_loop
@@ -261,11 +262,13 @@ async def widget_page(request: web.Request) -> web.Response:
     if widget is None or not widget.paginated:
         raise web.HTTPNotFound()
 
-    if not await can_see_page(request, dashboard.widget_page(widget.name)):
+    if not await can_see_page(
+        request, dashboard.placements.get(widget.name, DEFAULT_PAGE)
+    ):
         raise denied(request, page=False)
 
     kept = await dashboard.events.events(
-        widget.source, rollups=widget.rollup_safe, limit=getattr(widget, "keep", None)
+        widget.source, rollups=widget.rollup_safe, limit=widget.raw_events()
     )
     payload = await widget.page(
         kept, table_query(request), dashboard.context, dashboard.host_loop
@@ -370,6 +373,12 @@ async def run_action(request: web.Request) -> web.Response:
     if action is None:
         return web.json_response(
             {"ok": False, "error": f"No action named {name!r}."}, status=404
+        )
+
+    if request.content_type != "application/json" or not is_same_origin(request):
+        return web.json_response(
+            {"ok": False, "error": "Actions take a JSON request from the dashboard."},
+            status=403,
         )
 
     if not await can_run_action(request, name):

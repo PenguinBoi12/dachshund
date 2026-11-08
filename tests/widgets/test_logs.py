@@ -37,7 +37,7 @@ def add(dashboard: Dashboard, widget: Logs) -> Logs:
 
 
 def lines(dashboard: Dashboard) -> list[dict[str, Any]]:
-    return [event.payload for event in dashboard.drain()]
+    return [event.payload for event in dashboard.queue.drain()]
 
 
 def test_logs_record__expect_an_event_of_its_source(dashboard: Dashboard) -> None:
@@ -187,3 +187,7 @@ def test_logs_with_bad_options__expect_value_error(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         Logs("logs", **options)
+
+
+def test_logs_raw_events__expect_its_keep() -> None:
+    assert Logs("logs", keep=42).raw_events() == 42

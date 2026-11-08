@@ -130,7 +130,7 @@ async def test_index_with_a_widget__expect_its_points_hydrated() -> None:
     with dashboard.row():
         dashboard.add(TimeSeriesChart("latency"))
     dashboard.emit("latency", value=96)
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get("/")
@@ -173,7 +173,7 @@ async def test_index_with_several_y_fields__expect_every_series_hydrated() -> No
     with dashboard.row():
         dashboard.add(TimeSeriesChart("send_latency", y=["p50", "p95"]))
     dashboard.emit("send_latency", p50=10, p95=40)
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get("/")
@@ -203,7 +203,7 @@ async def test_index_with_an_unreadable_value__expect_the_page_to_survive() -> N
     dashboard.emit("latency", value="fast")
     dashboard.emit("latency", value=float("inf"))
     dashboard.emit("latency", value=96)
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get("/")
@@ -351,7 +351,7 @@ async def test_cards_with_a_table__expect_each_row_carrying_resolved_actions() -
     with dashboard.row():
         dashboard.add(Table("sessions", columns=["user"], actions=["ban"]))
     dashboard.emit("sessions", user="ada")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     card = (await cards(dashboard))[0][0]["cards"][0]
     payload = json.loads(card["payload"])
@@ -370,7 +370,7 @@ async def test_cards_with_a_table_and_an_unregistered_action__expect_a_sensible_
     with dashboard.row():
         dashboard.add(Table("sessions", columns=["user"], actions=["nope"]))
     dashboard.emit("sessions", user="ada")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     payload = json.loads((await cards(dashboard))[0][0]["cards"][0]["payload"])
 
@@ -475,7 +475,7 @@ async def test_widget_page__expect_the_first_page_and_a_total() -> None:
         dashboard.add(Table("sessions", columns=["user"], key="user", page_size=5))
     for i in range(6):
         dashboard.emit("sessions", user=f"user{i}")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get("/_widgets/sessions/page")
@@ -496,7 +496,7 @@ async def test_widget_page_with_a_query__expect_it_applied_with_resolved_actions
         dashboard.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
     for name in ["carol", "ada", "adam", "bob"]:
         dashboard.emit("sessions", user=name)
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         response = await client.get(
@@ -522,7 +522,7 @@ async def test_widget_page_with_a_bad_offset_or_limit__expect_them_clamped() -> 
     with dashboard.row():
         dashboard.add(Table("sessions", columns=["user"], key="user"))
     dashboard.emit("sessions", user="ada")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         bad = await (
@@ -594,7 +594,7 @@ async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
         dashboard.add(Table("sessions", columns=["user"], key="user", page_size=5))
     for i in range(6):
         dashboard.emit("sessions", user=f"user{i}")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     card = (await cards(dashboard))[0][0]["cards"][0]
     payload = json.loads(card["payload"])
@@ -879,7 +879,7 @@ async def test_card_of_a_windowed_number__expect_the_aggregate() -> None:
 
     for _ in range(3):
         dashboard.emit("requests", route="/users")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         body = await (await client.get("/")).text()
@@ -897,7 +897,7 @@ async def test_widget_page_of_logs_with_a_level__expect_only_that_level() -> Non
     dashboard.emit("logs", level="INFO", levelno=20, message="fine")
     dashboard.emit("logs", level="WARNING", levelno=30, message="odd")
     dashboard.emit("logs", level="ERROR", levelno=40, message="broken")
-    await dashboard.events.append(dashboard.drain())
+    await dashboard.events.append(dashboard.queue.drain())
 
     async with TestClient(TestServer(create_app(dashboard))) as client:
         one = await (await client.get("/_widgets/logs/page?level=30")).json()

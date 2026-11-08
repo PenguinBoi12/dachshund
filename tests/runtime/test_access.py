@@ -285,3 +285,72 @@ async def test_tab_of_a_public_page__expect_it_public() -> None:
         response = await client.get("/activity/commands")
 
     assert response.status == 200
+
+
+@pytest.mark.asyncio
+async def test_action_posted_as_a_form__expect_403_and_not_run() -> None:
+    calls: list[str] = []
+
+    async with TestClient(TestServer(create_app(build(None, calls=calls)))) as client:
+        response = await client.post("/_actions/restart", data={"args": "{}"})
+
+    assert response.status == 403
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_action_from_another_site__expect_403_and_not_run() -> None:
+    calls: list[str] = []
+
+    async with TestClient(TestServer(create_app(build(None, calls=calls)))) as client:
+        response = await client.post(
+            "/_actions/restart", json={}, headers={"Origin": "https://evil.example"}
+        )
+
+    assert response.status == 403
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_action_from_the_dashboard_page__expect_it_run() -> None:
+    calls: list[str] = []
+
+    async with TestClient(TestServer(create_app(build(None, calls=calls)))) as client:
+        origin = f"http://{client.host}:{client.port}"
+        response = await client.post(
+            "/_actions/restart", json={}, headers={"Origin": origin}
+        )
+
+    assert response.status == 200
+    assert calls == ["restart"]
+
+
+@pytest.mark.asyncio
+async def test_socket_from_another_site__expect_403() -> None:
+    async with TestClient(TestServer(create_app(build(None)))) as client:
+        with pytest.raises(WSServerHandshakeError) as raised:
+            await client.ws_connect(
+                f"{WS_PATH}?page=status", headers={"Origin": "https://evil.example"}
+            )
+
+    assert raised.value.status == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("proxied", [False, True])
+async def test_socket_from_the_dashboard_page__expect_it_upgraded(
+    proxied: bool,
+) -> None:
+    async with TestClient(TestServer(create_app(build(None)))) as client:
+        if proxied:
+            headers = {
+                "Origin": "https://dashboard.example",
+                "X-Forwarded-Host": "dashboard.example",
+            }
+        else:
+            headers = {"Origin": f"http://{client.host}:{client.port}"}
+
+        async with client.ws_connect(
+            f"{WS_PATH}?page=status", headers=headers
+        ) as socket:
+            assert not socket.closed

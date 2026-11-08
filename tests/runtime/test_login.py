@@ -9,6 +9,7 @@ import dachshund
 from dachshund import registry
 from dachshund.layout import Page
 from dachshund.registry import Dashboard
+from dachshund.runtime.access import login_page
 from dachshund.runtime.http import create_app
 from dachshund.widgets import Number
 
@@ -105,20 +106,20 @@ def test_login_with_bad_options__expect_value_error(
 
 
 def test_login_on_a_running_dashboard__expect_runtime_error() -> None:
-    dashboard = Dashboard(port=0, path=":memory:")
-    dashboard.start()
-
     try:
+        dachshund.init(port=0, path=":memory:")
+
         with pytest.raises(RuntimeError, match="before the dashboard starts"):
-            dashboard.set_login(None, {"login": login})
+            dachshund.init(port=0, path=":memory:", login={"login": login})
     finally:
-        dashboard.close()
+        dachshund.shutdown()
+        registry._dashboard = None
 
 
 def test_init_with_login__expect_it_set() -> None:
     try:
         dashboard = dachshund.init(port=0, path=":memory:", login={"login": login})
-        assert dashboard.login_page == "/_auth/login"
+        assert login_page(dashboard) == "/_auth/login"
     finally:
         dachshund.shutdown()
         registry._dashboard = None

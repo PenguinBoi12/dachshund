@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from dachshund.registry import Dashboard
 
 LEVELS = logging.getLevelNamesMapping()
-# The levels offered as toggles, lowest first.
 SHOWN = (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
 FORMATTER = logging.Formatter()
 
@@ -31,7 +30,6 @@ class LogsHandler(logging.Handler):
         self.dashboard = dashboard
 
     def emit(self, record: logging.LogRecord) -> None:
-        # Dachshund logging while it handles events would feed itself.
         if threading.current_thread().name == RUNTIME_THREAD:
             return
 
@@ -117,6 +115,10 @@ class Logs(Table):
 
         if self.keep < 1:
             raise ValueError(f"{self.name!r} has keep={self.keep}, keep at least 1.")
+
+    def raw_events(self) -> int | None:
+        """Its newest `keep` lines."""
+        return self.keep
 
     @property
     def levelno(self) -> int:

@@ -86,7 +86,6 @@ class BarChart(KeyedWidget):
         for category, entry in entries.items():
             value = aggregated(_bucket(entry), self.aggregate)
 
-            # A category with nothing to show, like no number to sum, has no bar.
             if value is not None:
                 bars[category] = value
 
