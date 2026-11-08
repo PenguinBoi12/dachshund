@@ -12,8 +12,13 @@
   flex: 1 1 0;
 }
 
+.card:has(> .card-content.logs) {
+  container-type: inline-size;
+}
+
 .logs-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
@@ -32,7 +37,8 @@
 }
 
 .logs-controls input {
-  flex: 1;
+  flex: 1 1 140px;
+  min-width: 0;
 }
 
 .logs-controls button[aria-pressed="true"] {
@@ -42,6 +48,7 @@
 
 .logs-toggles {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -63,7 +70,7 @@
 
 .logs-line {
   display: grid;
-  grid-template-columns: 70px 72px minmax(80px, 160px) 1fr;
+  grid-template-columns: 70px 72px minmax(80px, 160px) minmax(0, 1fr);
   gap: 10px;
   padding: 4px 0;
   border-bottom: 1px solid var(--separator);
@@ -127,4 +134,19 @@
 .logs-line.expandable .logs-message::after {
   content: "  traceback ▸";
   color: var(--text-muted);
+}
+
+@container (max-width: 560px) {
+  .logs-line {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .logs-line .logs-message {
+    grid-column: 1 / -1;
+  }
+
+  .logs-exception {
+    padding-left: 0;
+  }
 }
