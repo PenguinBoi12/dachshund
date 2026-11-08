@@ -1,0 +1,30 @@
+# Dashboard
+
+`Dashboard` holds everything one process shows on its dashboard. Most applications use the module-level functions below, which work on a default dashboard started by `dachshund.init()`.
+
+```python
+import dachshund
+from dachshund.widgets import TimeSeriesChart
+
+dachshund.init("Ada", description="Code Society's Matrix bot")
+
+with dachshund.row():
+    dachshund.add(TimeSeriesChart("latency"))
+
+dachshund.emit("latency", value=96)
+```
+
+::: dachshund.registry
+    options:
+      members:
+        - Dashboard
+        - default
+        - init
+        - shutdown
+        - include
+        - action
+        - emit
+        - page
+        - row
+        - column
+        - add

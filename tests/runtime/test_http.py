@@ -1,0 +1,923 @@
+import asyncio
+import json
+import threading
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, Sequence
+
+import pytest
+from aiohttp.test_utils import TestClient, TestServer
+
+from dachshund.layout import Page
+from dachshund.registry import Dashboard
+from dachshund.runtime.http import (
+    FALLBACK_NAME,
+    cards,
+    create_app,
+    create_environment,
+    heading,
+    page_names,
+    page_title,
+)
+from dachshund.storage import Event
+from dachshund.widgets import BarChart, Button, LineChart, Logs, Number, Table
+from dachshund.widgets.base import Widget
+from dachshund.widgets.chart.timeseries import TimeSeriesChart
+
+FIXTURE_SCRIPT = Path(__file__).parent.parent / "fixtures" / "gauge.js"
+
+
+@pytest.mark.asyncio
+async def test_index__expect_the_dashboard_shell() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert response.status == 200
+    assert response.content_type == "text/html"
+    assert "dachshund" in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_description__expect_it_rendered() -> None:
+    app = create_app(
+        Dashboard("Ada", description="Code Society's Matrix bot", path=":memory:")
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "<title>Ada - Overview</title>" in body
+    assert "Code Society&#39;s Matrix bot" in body
+    assert "just now" in body
+
+
+@pytest.mark.asyncio
+async def test_index_without_a_description__expect_no_description() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "service-description" not in body
+
+
+@pytest.mark.asyncio
+async def test_static__expect_the_asset_served() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/_static/dashboard.css")
+        body = await response.text()
+
+    assert response.status == 200
+    assert ".card" in body
+
+
+@pytest.mark.asyncio
+async def test_unknown_route__expect_not_found() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/nope")
+
+    assert response.status == 404
+
+
+def test_environment_render__expect_escaped_values() -> None:
+    template = create_environment().from_string("{{ value }}")
+
+    assert template.render(value="<script>") == "&lt;script&gt;"
+
+
+@pytest.mark.asyncio
+async def test_index_without_a_name__expect_a_generic_title() -> None:
+    async with TestClient(TestServer(create_app(Dashboard(path=":memory:")))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert f"<title>{FALLBACK_NAME} - Overview</title>" in body
+
+
+@pytest.mark.asyncio
+async def test_index__expect_the_client_bundle_loaded() -> None:
+    async with TestClient(TestServer(create_app(Dashboard(path=":memory:")))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert '<script src="/_static/uplot.min.js"></script>' in body
+    assert '<script src="/_static/dashboard.js"></script>' in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "asset", ["uplot.min.js", "uplot.min.css", "dashboard.js", "dashboard.css"]
+)
+async def test_static__expect_the_vendored_bundle_served(asset: str) -> None:
+    async with TestClient(TestServer(create_app(Dashboard(path=":memory:")))) as client:
+        response = await client.get(f"/_static/{asset}")
+
+    assert response.status == 200
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_widget__expect_its_points_hydrated() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    dashboard.emit("latency", value=96)
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert 'data-widget="latency"' in body
+    assert 'data-type="timeseries"' in body
+    assert "96.0" in body
+
+
+def test_heading__expect_the_title_when_given() -> None:
+    chart = TimeSeriesChart("latency", source="latency", title="Response time")
+
+    assert heading(chart) == "Response time"
+
+
+def test_heading__expect_a_readable_name_without_a_title() -> None:
+    assert heading(TimeSeriesChart("requests_per_sec", source="request")) == (
+        "requests per sec"
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_titled_bar__expect_its_title_shown() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(BarChart("command_calls", x="name", title="Calls Per Command"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "Calls Per Command" in body
+    assert ">name<" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_several_y_fields__expect_every_series_hydrated() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("send_latency", y=["p50", "p95"]))
+    dashboard.emit("send_latency", p50=10, p95=40)
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "p50" in body
+    assert "p95" in body
+
+
+@pytest.mark.asyncio
+async def test_cards__expect_a_series_aware_payload() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("send_latency", y=["p50", "p95"]))
+
+    payload = json.loads((await cards(dashboard))[0][0]["cards"][0]["payload"])
+
+    assert payload["series"] == ["p50", "p95"]
+    assert payload["y"] == [[], []]
+
+
+@pytest.mark.asyncio
+async def test_index_with_an_unreadable_value__expect_the_page_to_survive() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    dashboard.emit("latency", value="fast")
+    dashboard.emit("latency", value=float("inf"))
+    dashboard.emit("latency", value=96)
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "NaN" not in body
+    assert "Infinity" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_without_custom_widgets__expect_no_widget_asset_tags() -> None:
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "/_static/widgets/" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_custom_widget__expect_its_script_before_dashboard_js() -> (
+    None
+):
+    class Gauge(Widget):
+        type = "custom_test_http_gauge"
+        script = FIXTURE_SCRIPT
+
+        def render(self, events: Sequence[Event]) -> dict[str, Any]:
+            return {}
+
+        def update(self, event: Event) -> dict[str, Any] | None:
+            return None
+
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Gauge("cpu", source="cpu"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    script_tag = '<script src="/_static/widgets/custom_test_http_gauge.js"></script>'
+
+    assert script_tag in body
+    assert body.index(script_tag) < body.index(
+        '<script src="/_static/dashboard.js"></script>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_with_two_instances_of_a_custom_type__expect_one_script_tag() -> (
+    None
+):
+    class Meter(Widget):
+        type = "custom_test_http_meter"
+        script = FIXTURE_SCRIPT
+
+        def render(self, events: Sequence[Event]) -> dict[str, Any]:
+            return {}
+
+        def update(self, event: Event) -> dict[str, Any] | None:
+            return None
+
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Meter("cpu", source="cpu"))
+    with dashboard.row():
+        dashboard.add(Meter("memory", source="memory"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert body.count("/_static/widgets/custom_test_http_meter.js") == 1
+
+
+@pytest.mark.asyncio
+async def test_index_with_the_builtin_charts__expect_one_shared_asset_pair() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    with dashboard.row():
+        dashboard.add(LineChart("throughput", x="requests"))
+    with dashboard.row():
+        dashboard.add(BarChart("errors", x="code"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    types = ("timeseries", "line", "bar")
+
+    assert body.count("/_static/widgets/") == 2  # one script tag, one style tag
+    assert sum(body.count(f"/_static/widgets/{t}.js") for t in types) == 1
+    assert sum(body.count(f"/_static/widgets/{t}.css") for t in types) == 1
+
+
+@pytest.mark.asyncio
+async def test_widget_script__expect_the_file_served() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/timeseries.js")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "Dachshund.widget" in body
+
+
+@pytest.mark.asyncio
+async def test_widget_style__expect_the_file_served() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/timeseries.css")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "chart-tooltip" in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["value.js", "value.css", "nope.js", "nope.css"])
+async def test_widget_asset_without_one_declared__expect_not_found(path: str) -> None:
+    # "value" isn't a registered widget type at all, and no built-in type is
+    # named "nope" either. Both should 404, not error.
+    async with TestClient(
+        TestServer(create_app(Dashboard("Ada", path=":memory:")))
+    ) as client:
+        response = await client.get(f"/_static/widgets/{path}")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_cards_with_a_table__expect_each_row_carrying_resolved_actions() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], actions=["ban"]))
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    card = (await cards(dashboard))[0][0]["cards"][0]
+    payload = json.loads(card["payload"])
+
+    assert card["actions"] == []
+    assert payload["rows"][0]["actions"] == [
+        {"name": "ban", "label": "Ban", "confirm": True, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cards_with_a_table_and_an_unregistered_action__expect_a_sensible_fallback() -> (
+    None
+):
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], actions=["nope"]))
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    payload = json.loads((await cards(dashboard))[0][0]["cards"][0]["payload"])
+
+    assert payload["rows"][0]["actions"] == [
+        {"name": "nope", "label": "nope", "confirm": False, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_table__expect_no_card_level_action_row() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], actions=["ban"]))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "card-actions" not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_button__expect_the_card_level_action_row() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ping", label="Ping")(lambda ctx: None)
+    with dashboard.row():
+        dashboard.add(Button("ping", actions=["ping"]))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert "card-actions" in body
+    assert 'data-action="ping"' in body
+
+
+@pytest.mark.asyncio
+async def test_cards_with_action_args__expect_them_on_the_card_level_action() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("block_user")(lambda ctx, user_id: None)
+    with dashboard.row():
+        dashboard.add(
+            Button(
+                "last_signup",
+                actions=["block_user"],
+                action_args={"block_user": {"user_id": "42"}},
+            )
+        )
+
+    card = (await cards(dashboard))[0][0]["cards"][0]
+
+    assert card["actions"] == [
+        {
+            "name": "block_user",
+            "label": "block_user",
+            "confirm": False,
+            "args": {"user_id": "42"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_index_with_action_args__expect_them_rendered_as_data_args() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("block_user")(lambda ctx, user_id: None)
+    with dashboard.row():
+        dashboard.add(
+            Button(
+                "last_signup",
+                actions=["block_user"],
+                action_args={"block_user": {"user_id": "42"}},
+            )
+        )
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/")
+        body = await response.text()
+
+    assert 'data-args="{&#34;user_id&#34;: &#34;42&#34;}"' in body
+
+
+@pytest.mark.asyncio
+async def test_widget_asset_for_a_type_without_one__expect_not_found() -> None:
+    class Plain(Widget):
+        type = "custom_test_http_plain"
+
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Plain("cpu", source="cpu"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_static/widgets/custom_test_http_plain.js")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_widget_page__expect_the_first_page_and_a_total() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], key="user", page_size=5))
+    for i in range(6):
+        dashboard.emit("sessions", user=f"user{i}")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/sessions/page")
+        payload = await response.json()
+
+    assert response.status == 200
+    assert len(payload["rows"]) == 5
+    assert (payload["total"], payload["offset"], payload["limit"]) == (6, 0, 5)
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_query__expect_it_applied_with_resolved_actions() -> (
+    None
+):
+    dashboard = Dashboard(path=":memory:")
+    dashboard.action("ban", label="Ban", confirm=True)(lambda ctx, user: None)
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], key="user", actions=["ban"]))
+    for name in ["carol", "ada", "adam", "bob"]:
+        dashboard.emit("sessions", user=name)
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get(
+            "/_widgets/sessions/page?search=ad&sort=user&dir=desc&offset=1&limit=1"
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert [row["fields"]["user"] for row in payload["rows"]] == ["ada"]
+    assert (payload["total"], payload["sort_by"], payload["descending"]) == (
+        2,
+        "user",
+        True,
+    )
+    assert payload["rows"][0]["actions"] == [
+        {"name": "ban", "label": "Ban", "confirm": True, "args": {}}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_bad_offset_or_limit__expect_them_clamped() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], key="user"))
+    dashboard.emit("sessions", user="ada")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        bad = await (
+            await client.get("/_widgets/sessions/page?offset=-3&limit=nope")
+        ).json()
+        huge = await (await client.get("/_widgets/sessions/page?limit=5000")).json()
+
+    assert (bad["offset"], bad["limit"]) == (0, 10)
+    assert huge["limit"] == 100
+
+
+@pytest.mark.asyncio
+async def test_widget_page_with_a_loader__expect_its_rows_and_host_loop() -> None:
+    host_loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=host_loop.run_forever, daemon=True)
+    thread.start()
+
+    seen_loop = None
+    seen_ctx = None
+
+    async def load(ctx, query) -> tuple[list[dict], int | None]:
+        nonlocal seen_loop, seen_ctx
+        seen_loop = asyncio.get_running_loop()
+        seen_ctx = ctx
+        return [{"user": "ada"}], None
+
+    dashboard = Dashboard(path=":memory:", context={"bot": "b"})
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], loader=load))
+    dashboard.host_loop = host_loop
+
+    try:
+        async with TestClient(TestServer(create_app(dashboard))) as client:
+            response = await client.get("/_widgets/sessions/page")
+            payload = await response.json()
+    finally:
+        host_loop.call_soon_threadsafe(host_loop.stop)
+        thread.join(5)
+
+    assert payload["rows"][0]["fields"] == {"user": "ada"}
+    assert seen_loop is host_loop
+    assert seen_ctx == {"bot": "b"}
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_an_unknown_widget__expect_not_found() -> None:
+    async with TestClient(TestServer(create_app(Dashboard(path=":memory:")))) as client:
+        response = await client.get("/_widgets/nope/page")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_a_non_paginated_widget__expect_not_found() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(BarChart("commands", x="name"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/_widgets/commands/page")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_table__expect_only_one_page_embedded() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(Table("sessions", columns=["user"], key="user", page_size=5))
+    for i in range(6):
+        dashboard.emit("sessions", user=f"user{i}")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    card = (await cards(dashboard))[0][0]["cards"][0]
+    payload = json.loads(card["payload"])
+
+    assert len(payload["rows"]) == 5
+    assert payload["total"] == 6
+
+
+def test_page_names_with_nothing_declared__expect_only_default() -> None:
+    assert page_names(Dashboard(path=":memory:")) == ["default"]
+
+
+def test_page_names_with_leftovers__expect_default_first() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("errors"), page="requests")
+
+    assert page_names(dashboard) == ["default", "requests"]
+
+
+def test_page_names_with_default_emptied__expect_it_left_out() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("latency"), page="requests")
+
+    assert page_names(dashboard) == ["requests"]
+
+
+def test_page_title__expect_the_declared_title_then_fallbacks() -> None:
+    dashboard = Dashboard(path=":memory:")
+    dashboard.page("errors", title="Errors")
+    dashboard.page("slow_requests")
+
+    assert page_title(dashboard, "errors") == "Errors"
+    assert page_title(dashboard, "slow_requests") == "slow requests"
+    assert page_title(dashboard, "default") == "Overview"
+
+
+@pytest.mark.asyncio
+async def test_cards__expect_rows_of_columns_with_their_spans() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("errors"))
+
+    with dashboard.row():
+        with dashboard.column(span=4):
+            dashboard.add(TimeSeriesChart("cpu"))
+            dashboard.add(TimeSeriesChart("disk"))
+        dashboard.add(TimeSeriesChart("latency"))
+
+    built = await cards(dashboard)
+
+    assert [
+        [(column["span"], [card["name"] for card in column["cards"]]) for column in row]
+        for row in built
+    ] == [
+        [(12, ["errors"])],
+        [(4, ["cpu", "disk"]), (8, ["latency"])],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_named_page__expect_only_its_widgets() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("errors"), page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        index = await (await client.get("/")).text()
+        requests = await (await client.get("/requests")).text()
+
+    assert 'data-widget="latency"' in index
+    assert 'data-widget="errors"' not in index
+    assert 'data-widget="errors"' in requests
+    assert 'data-widget="latency"' not in requests
+
+
+@pytest.mark.asyncio
+async def test_index_with_several_pages__expect_a_nav_marking_the_current() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("errors"), page="requests")
+    dashboard.page("requests", title="Requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/requests")).text()
+
+    assert '<a href="/">Overview</a>' in body
+    assert '<a href="/requests" aria-current="page">Requests</a>' in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_one_page__expect_no_nav() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert 'class="pages"' not in body
+
+
+@pytest.mark.asyncio
+async def test_index_with_default_emptied__expect_the_first_declared_page() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("latency"), page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert 'data-widget="latency"' in body
+
+
+@pytest.mark.asyncio
+async def test_named_page_of_the_first_page__expect_a_redirect_to_index() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("latency"), page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/requests", allow_redirects=False)
+
+    assert response.status == 302
+    assert response.headers["Location"] == "/"
+
+
+@pytest.mark.asyncio
+async def test_named_page_declared_without_widgets__expect_the_empty_state() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    dashboard.page("errors")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.get("/errors")
+        body = await response.text()
+
+    assert response.status == 200
+    assert "Nothing here yet" in body
+
+
+@pytest.mark.asyncio
+async def test_index__expect_the_page_shown_named_on_the_body() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row(page="requests"):
+        dashboard.add(TimeSeriesChart("latency"), page="requests")
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert '<body data-page="requests">' in body
+
+
+def activity_dashboard() -> Dashboard:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+    activity = Page("activity", title="Activity")
+    with activity.tab("commands", title="Commands"):
+        with activity.row():
+            activity.add(TimeSeriesChart("calls"))
+    with activity.tab("errors", title="Errors"):
+        with activity.row():
+            activity.add(TimeSeriesChart("failures"))
+    dashboard.include(activity)
+
+    return dashboard
+
+
+def test_page_names_with_tabs__expect_only_top_level_pages() -> None:
+    assert page_names(activity_dashboard()) == ["default", "activity"]
+
+
+@pytest.mark.asyncio
+async def test_page_with_tabs__expect_its_first_tab_shown() -> None:
+    async with TestClient(TestServer(create_app(activity_dashboard()))) as client:
+        body = await (await client.get("/activity")).text()
+
+    assert 'data-page="activity/commands"' in body
+    assert 'data-widget="calls"' in body
+    assert 'data-widget="failures"' not in body
+    assert '<a href="/activity" aria-current="page">Activity</a>' in body
+    assert '<a href="/activity/commands" aria-current="page">Commands</a>' in body
+    assert '<a href="/activity/errors">Errors</a>' in body
+
+
+@pytest.mark.asyncio
+async def test_tab_url__expect_that_tab_shown() -> None:
+    async with TestClient(TestServer(create_app(activity_dashboard()))) as client:
+        body = await (await client.get("/activity/errors")).text()
+
+    assert 'data-widget="failures"' in body
+    assert 'data-widget="calls"' not in body
+    assert '<a href="/activity/errors" aria-current="page">Errors</a>' in body
+
+
+@pytest.mark.asyncio
+async def test_unknown_tab_url__expect_not_found() -> None:
+    async with TestClient(TestServer(create_app(activity_dashboard()))) as client:
+        response = await client.get("/activity/nope")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_index_with_a_col__expect_its_cards_stacked_inside_it() -> None:
+    dashboard = Dashboard(path=":memory:")
+
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+        with dashboard.column(span=4):
+            dashboard.add(TimeSeriesChart("errors"))
+            dashboard.add(TimeSeriesChart("cpu"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    column = body[body.index('<div class="column" style="--span: 4">') :]
+
+    assert '<div class="column" style="--span: 8">' in body
+    assert 'data-widget="errors"' in column and 'data-widget="cpu"' in column
+    assert body.count('<div class="row">') == 1
+
+
+@pytest.mark.asyncio
+async def test_action_of_an_included_page__expect_it_run() -> None:
+    dashboard = Dashboard(path=":memory:")
+    page = Page("admin")
+    calls: list[str] = []
+
+    @page.action("flush")
+    def flush(ctx: dict, key: str) -> str:
+        calls.append(key)
+        return "flushed"
+
+    dashboard.include(page)
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        response = await client.post("/_actions/flush", json={"args": {"key": "a"}})
+        body = await response.json()
+
+    assert body == {"ok": True, "result": "flushed"}
+    assert calls == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_page__expect_its_title_after_the_dashboard_name() -> None:
+    dashboard = Dashboard("Grace", path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert "<title>Grace - Overview</title>" in body
+
+
+@pytest.mark.asyncio
+async def test_tab__expect_its_page_title_after_the_dashboard_name() -> None:
+    dashboard = activity_dashboard()
+    dashboard.name = "Grace"
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/activity/errors")).text()
+
+    assert "<title>Grace - Activity</title>" in body
+
+
+@pytest.mark.asyncio
+async def test_card_of_a_windowed_number__expect_the_aggregate() -> None:
+    dashboard = Dashboard("Ada", path=":memory:")
+    with dashboard.row():
+        dashboard.add(Number("requests", aggregate="count", over=timedelta(hours=1)))
+
+    for _ in range(3):
+        dashboard.emit("requests", route="/users")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert "{&#34;value&#34;: 3, &#34;unit&#34;: null}" in body
+
+
+@pytest.mark.asyncio
+async def test_widget_page_of_logs_with_a_level__expect_only_that_level() -> None:
+    dashboard = Dashboard("Ada", path=":memory:")
+    with dashboard.row():
+        dashboard.add(Logs("logs", logger="tests.http"))
+    dashboard.widgets["logs"].unbind()
+
+    dashboard.emit("logs", level="INFO", levelno=20, message="fine")
+    dashboard.emit("logs", level="WARNING", levelno=30, message="odd")
+    dashboard.emit("logs", level="ERROR", levelno=40, message="broken")
+    await dashboard.events.append(dashboard.queue.drain())
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        one = await (await client.get("/_widgets/logs/page?level=30")).json()
+        two = await (await client.get("/_widgets/logs/page?level=20&level=40")).json()
+        bad = await (await client.get("/_widgets/logs/page?level=x")).json()
+
+    assert [row["fields"]["message"] for row in one["rows"]] == ["odd"]
+    assert [row["fields"]["message"] for row in two["rows"]] == ["broken", "fine"]
+    assert len(bad["rows"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_index__expect_an_expand_button_on_every_card() -> None:
+    dashboard = Dashboard(path=":memory:")
+    with dashboard.row():
+        dashboard.add(TimeSeriesChart("latency"))
+        dashboard.add(Table("sessions", columns=["user"]))
+
+    async with TestClient(TestServer(create_app(dashboard))) as client:
+        body = await (await client.get("/")).text()
+
+    assert body.count("data-expand") == 2
+    assert 'aria-label="Expand latency"' in body
