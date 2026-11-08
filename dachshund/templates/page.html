@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% macro card(widget) %}
+<section class="card"
+         data-widget="{{ widget.name }}"
+         data-type="{{ widget.type }}"
+         data-payload="{{ widget.payload }}">
+  <div class="card-head">
+    <h2 class="card-title">{{ widget.title }}</h2>
+    <button type="button" class="card-expand" data-expand aria-pressed="false" aria-label="Expand {{ widget.title }}" title="Expand">⤢</button>
+  </div>
+  <div class="card-content"></div>
+  {% if widget.actions %}
+  <div class="card-actions">
+    {% for action in widget.actions %}
+    <button data-action="{{ action.name }}" data-confirm="{{ action.confirm|lower }}" data-args="{{ action.args|tojson }}">{{ action.label }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% block content %}
+<div class="content{% if tabs %} tabbed{% endif %}">
+{% if tabs %}
+<nav class="tabs">
+  {% for tab in tabs %}
+  <a href="{{ tab.url }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+<div class="layout">
+{% for row in rows %}
+<div class="row">
+  {% for column in row %}
+  <div class="column" style="--span: {{ column.span }}">
+    {% for widget in column.cards %}{{ card(widget) }}{% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% if not rows %}
+<div class="row">
+  <section class="card empty" style="grid-column: span 12">
+    <h2 class="card-title">Nothing here yet</h2>
+    <p class="card-body">Register a widget to start building this dashboard.</p>
+  </section>
+</div>
+{% endif %}
+</div>
+</div>
+{% endblock %}
