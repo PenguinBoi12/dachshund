@@ -1,6 +1,11 @@
 # Dachshund
 > *A live admin dashboard for any Python service, embedded in the process itself.*
 
+[![Tests](https://github.com/PenguinBoi12/dachshund/actions/workflows/tests.yml/badge.svg)](https://github.com/PenguinBoi12/dachshund/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/dachshund)](https://pypi.org/project/dachshund/)
+[![CodeQL Advanced](https://github.com/PenguinBoi12/dachshund/actions/workflows/codeql.yml/badge.svg)](https://github.com/PenguinBoi12/dachshund/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/PenguinBoi12/dachshund/badge)](https://securityscorecards.dev/viewer/?uri=github.com/PenguinBoi12/dachshund)
+
 > **Beta.** Dachshund works, but its API may still change between releases. Pin a version before depending on it.
 
 ![A dachshund dashboard showing a worker's jobs](docs/docs/img/dashboard.png)
