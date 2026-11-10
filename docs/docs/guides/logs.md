@@ -20,13 +20,16 @@ Every line shows its time, level, logger and message. A line logged with an exce
 
 ```python
 with dachshund.row():
-    dachshund.add(Logs("api_errors", logger="myapp.api", level="ERROR"))
+    dachshund.add(Logs("api_errors", include=["myapp.api", "myapp.jobs"], level="ERROR"))
 ```
 
-- `logger` captures that logger and its children: `"myapp.api"` shows `myapp.api.users` too, but not `myapp.web`. Without it, every logger.
+- `include` captures those loggers and their children: `["myapp.api"]` shows `myapp.api.users` too, but not `myapp.web`. Without it, every logger.
 - `level` is the lowest level captured, `"INFO"` by default. Levels below it aren't stored, so the browser doesn't offer them: `Logs(level="DEBUG")` captures debug lines too.
+- `exclude` leaves loggers out, with their children: `Logs(exclude=["apscheduler", "httpx"])` shows everything but the scheduler and the HTTP client. With `include`, it trims inside it: `Logs(include=["myapp"], exclude=["myapp.health"])`. An excluded logger that isn't under an included one, like `exclude=["myapp"]` there, raises a `ValueError`.
 
-A logger only passes the levels it's set to. The root logger passes `WARNING` and up until it's configured, so a `Logs` widget at `INFO` logs a warning when its logger would hide its lines. Set the level with `logging.basicConfig(level=logging.INFO)` or `logging.getLogger("myapp").setLevel(logging.INFO)`.
+The dashboard's own lines, under the `dachshund` logger, are captured like any other. Its web server's, under `aiohttp`, aren't: each line shown is a request, which would log another.
+
+A logger only passes the levels it's set to. The root logger passes `WARNING` and up until it's configured, so a `Logs` widget at `INFO` logs a warning when one of its loggers would hide its lines. Set the level with `logging.basicConfig(level=logging.INFO)` or `logging.getLogger("myapp").setLevel(logging.INFO)`.
 
 ## In the browser
 

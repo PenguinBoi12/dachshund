@@ -104,7 +104,7 @@ def test_start_with_a_taken_port__expect_failover_once_freed(
     try:
         assert not runtime.is_serving
 
-        blocker.close()  # the "winning" worker dying frees the port
+        blocker.close()
 
         deadline = time.monotonic() + FAILOVER_TIMEOUT
         while not runtime.is_serving and time.monotonic() < deadline:
@@ -117,7 +117,7 @@ def test_start_with_a_taken_port__expect_failover_once_freed(
 
 
 def test_start_with_an_unbindable_port__expect_os_error() -> None:
-    runtime = Runtime(build_app, port=1)  # privileged, not EADDRINUSE
+    runtime = Runtime(build_app, port=1)
 
     with pytest.raises(OSError):
         runtime.start()

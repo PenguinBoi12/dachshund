@@ -7,7 +7,7 @@ import dachshund
 from dachshund.widgets import Logs
 
 with dachshund.row():
-    dachshund.add(Logs("api_errors", logger="myapp.api", level="ERROR"))
+    dachshund.add(Logs("api_errors", include=["myapp.api"], level="ERROR"))
 ```
 
 ::: dachshund.widgets.logs.logs.Logs
