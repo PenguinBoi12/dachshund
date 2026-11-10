@@ -112,8 +112,6 @@ class Dashboard:
         self._connection, self._executor = db.setup(path, EVENTS_MIGRATIONS)
         self.events = EventStore(self._connection, self._executor)
 
-        # No default: a persisting widget's state is a deliberate choice,
-        # not something to quietly tuck into the same file as raw events.
         self.storage = storage
         self.context: Context = dict(context) if context else {}
         self.authorize = authorize

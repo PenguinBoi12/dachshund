@@ -41,7 +41,7 @@ def lines(dashboard: Dashboard) -> list[dict[str, Any]]:
 
 
 def test_logs_record__expect_an_event_of_its_source(dashboard: Dashboard) -> None:
-    add(dashboard, Logs("logs", logger="tests.app"))
+    add(dashboard, Logs("logs", include=["tests.app"]))
 
     logging.getLogger("tests.app").info("hello %s", "ada")
 
@@ -54,7 +54,7 @@ def test_logs_record__expect_an_event_of_its_source(dashboard: Dashboard) -> Non
 def test_logs_record_with_an_exception__expect_its_traceback(
     dashboard: Dashboard,
 ) -> None:
-    add(dashboard, Logs("logs", logger="tests.app"))
+    add(dashboard, Logs("logs", include=["tests.app"]))
 
     try:
         raise RuntimeError("boom")
@@ -68,7 +68,7 @@ def test_logs_record_with_an_exception__expect_its_traceback(
 def test_logs_of_a_logger__expect_children_captured_and_siblings_not(
     dashboard: Dashboard,
 ) -> None:
-    add(dashboard, Logs("logs", logger="tests.api"))
+    add(dashboard, Logs("logs", include=["tests.api"]))
 
     logging.getLogger("tests.api.users").warning("child")
     logging.getLogger("tests.web").warning("sibling")
@@ -77,7 +77,7 @@ def test_logs_of_a_logger__expect_children_captured_and_siblings_not(
 
 
 def test_logs_below_its_level__expect_them_skipped(dashboard: Dashboard) -> None:
-    add(dashboard, Logs("logs", logger="tests.app", level="ERROR"))
+    add(dashboard, Logs("logs", include=["tests.app"], level="ERROR"))
 
     logging.getLogger("tests.app").warning("quiet")
     logging.getLogger("tests.app").error("loud")
@@ -85,25 +85,104 @@ def test_logs_below_its_level__expect_them_skipped(dashboard: Dashboard) -> None
     assert [line["message"] for line in lines(dashboard)] == ["loud"]
 
 
-def test_logs_from_the_runtime_thread__expect_them_dropped(
-    dashboard: Dashboard,
-) -> None:
-    add(dashboard, Logs("logs", logger="tests.app"))
-
+def log_on(thread_name: str, name: str, message: str) -> None:
     thread = threading.Thread(
-        target=lambda: logging.getLogger("tests.app").error("inside"),
-        name=RUNTIME_THREAD,
+        target=lambda: logging.getLogger(name).error(message), name=thread_name
     )
     thread.start()
     thread.join()
 
+
+def test_logs_with_exclude__expect_excluded_loggers_and_children_skipped(
+    dashboard: Dashboard,
+) -> None:
+    add(dashboard, Logs("logs", include=["tests"], exclude=["tests.noisy"]))
+
+    logging.getLogger("tests.noisy").warning("noisy")
+    logging.getLogger("tests.noisy.child").warning("child")
+    logging.getLogger("tests.noisy_neighbour").warning("neighbour")
+    logging.getLogger("tests.app").warning("app")
+
+    assert [line["message"] for line in lines(dashboard)] == ["neighbour", "app"]
+
+
+def test_logs_with_several_includes__expect_each_and_children_captured(
+    dashboard: Dashboard,
+) -> None:
+    add(dashboard, Logs("logs", include=["tests.api", "tests.jobs"]))
+
+    logging.getLogger("tests.api").warning("api")
+    logging.getLogger("tests.jobs.nightly").warning("nightly")
+    logging.getLogger("tests.web").warning("web")
+
+    assert [line["message"] for line in lines(dashboard)] == ["api", "nightly"]
+
+
+def test_logs_with_overlapping_includes__expect_each_line_once(
+    dashboard: Dashboard,
+) -> None:
+    widget = add(dashboard, Logs("logs", include=["tests.api.users", "tests.api"]))
+
+    logging.getLogger("tests.api.users").warning("users")
+
+    assert [line["message"] for line in lines(dashboard)] == ["users"]
+    assert [captured.name for captured in widget.captured()] == ["tests.api"]
+
+
+def test_logs_without_include__expect_the_root_logger() -> None:
+    assert Logs("logs").captured() == [logging.getLogger()]
+
+
+def test_logs_from_the_runtime_thread__expect_them_captured(
+    dashboard: Dashboard,
+) -> None:
+    add(dashboard, Logs("logs", include=["tests.app"]))
+
+    log_on(RUNTIME_THREAD, "tests.app", "inside")
+
+    assert [line["message"] for line in lines(dashboard)] == ["inside"]
+
+
+def test_logs_server_on_the_runtime_thread__expect_them_dropped(
+    dashboard: Dashboard,
+) -> None:
+    add(dashboard, Logs("logs"))
+
+    log_on(RUNTIME_THREAD, "aiohttp.access", "GET /")
+
     assert lines(dashboard) == []
+
+
+def test_logs_server_on_another_thread__expect_them_captured(
+    dashboard: Dashboard,
+) -> None:
+    add(dashboard, Logs("logs", include=["aiohttp"]))
+
+    log_on("app", "aiohttp.access", "GET /")
+
+    assert [line["message"] for line in lines(dashboard)] == ["GET /"]
+
+
+def test_logs_logged_while_emitting__expect_them_skipped(
+    dashboard: Dashboard, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add(dashboard, Logs("logs", include=["tests.app"]))
+    emit = dashboard.emit
+
+    def logging_emit(source: str, /, **fields: Any) -> None:
+        logging.getLogger("tests.app").warning("from emit")
+        emit(source, **fields)
+
+    monkeypatch.setattr(dashboard, "emit", logging_emit)
+    logging.getLogger("tests.app").warning("outer")
+
+    assert [line["message"] for line in lines(dashboard)] == ["outer"]
 
 
 def test_logs_bind_twice__expect_one_handler_and_unbind_detaches(
     dashboard: Dashboard,
 ) -> None:
-    widget = add(dashboard, Logs("logs", logger="tests.app"))
+    widget = add(dashboard, Logs("logs", include=["tests.app"]))
     captured = logging.getLogger("tests.app")
 
     widget.bind(dashboard)
@@ -121,7 +200,7 @@ def test_logs_on_a_quieter_logger__expect_a_warning(
     logging.getLogger("tests.quiet").setLevel(logging.ERROR)
 
     with caplog.at_level(logging.WARNING, logger="dachshund"):
-        add(dashboard, Logs("logs", logger="tests.quiet"))
+        add(dashboard, Logs("logs", include=["tests.quiet"]))
 
     logging.getLogger("tests.quiet").setLevel(logging.NOTSET)
     assert "only passes ERROR and up" in caplog.text
@@ -180,6 +259,13 @@ def _messages(page: dict[str, Any]) -> list[str]:
         ({"level": "LOUD"}, "level='LOUD'"),
         ({"persist": True}, "give it `keep`"),
         ({"keep": 0}, "keep at least 1"),
+        ({"include": ["myapp"], "exclude": ["myapp"]}, "excludes myapp,"),
+        ({"include": ["myapp.api"], "exclude": ["myapp"]}, "excludes myapp,"),
+        ({"include": ["myapp"], "exclude": ["httpx"]}, "excludes httpx,"),
+        (
+            {"include": ["myapp"], "exclude": ["myapp.health", "myappx"]},
+            "excludes myappx,",
+        ),
     ],
 )
 def test_logs_with_bad_options__expect_value_error(

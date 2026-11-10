@@ -21,7 +21,7 @@ dachshund.emit("commands", name="/deploy", value=1)
 | [LineChart](../reference/line-chart.md) | One field against another | `x` and `y` | `emit("load", requests=120, latency=96)` |
 | [BarChart](../reference/bar-chart.md) | A total, or another [aggregate](#aggregating), per category | `x` for the category, `y` aggregated | `emit("commands", name="/deploy", value=1)` |
 | [Table](../reference/table.md) | One row per event or key | the fields named in `columns` | `emit("sessions", user="ada", ip="10.0.0.1")` |
-| [Logs](../reference/logs.md) | Python log lines, newest first | its `logger`, from `logging` | `logging.getLogger("myapp").info("started")`, see [Logs](logs.md) |
+| [Logs](../reference/logs.md) | Python log lines, newest first | its `include` loggers, from `logging` | `logging.getLogger("myapp").info("started")`, see [Logs](logs.md) |
 | [Button](../reference/button.md) | Buttons running actions | nothing | see [Actions](actions.md) |
 
 Fields a widget doesn't read are ignored. A number can be an `int`, a `float`, a numeric string, a `datetime` or a `timedelta`. A field that's missing or not a number leaves a gap, and logs a warning once.

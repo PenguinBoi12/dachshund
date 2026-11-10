@@ -891,7 +891,7 @@ async def test_card_of_a_windowed_number__expect_the_aggregate() -> None:
 async def test_widget_page_of_logs_with_a_level__expect_only_that_level() -> None:
     dashboard = Dashboard("Ada", path=":memory:")
     with dashboard.row():
-        dashboard.add(Logs("logs", logger="tests.http"))
+        dashboard.add(Logs("logs", include=["tests.http"]))
     dashboard.widgets["logs"].unbind()
 
     dashboard.emit("logs", level="INFO", levelno=20, message="fine")

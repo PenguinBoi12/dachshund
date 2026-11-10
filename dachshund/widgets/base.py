@@ -96,9 +96,6 @@ class Widget:
                     f"{cls.__name__}.{attr} points at {path}, which doesn't exist."
                 )
 
-        # A widget registers itself here, so a custom one needs nothing more
-        # than a `type` of its own and being imported once. An intermediate
-        # base without its own `type` is never built by name.
         if "type" in cls.__dict__:
             WIDGETS[cls.type] = cls
 

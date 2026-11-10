@@ -18,7 +18,16 @@ LEVELS = logging.getLevelNamesMapping()
 SHOWN = (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
 FORMATTER = logging.Formatter()
 
+SERVER_LOGGER = "aiohttp"
+
 logger = logging.getLogger("dachshund")
+
+_emitting = threading.local()
+
+
+def _within(name: str, parent: str) -> bool:
+    """Whether logger `name` is `parent` or one of its children."""
+    return parent == "" or name == parent or name.startswith(f"{parent}.")
 
 
 class LogsHandler(logging.Handler):
@@ -29,8 +38,20 @@ class LogsHandler(logging.Handler):
         self.widget = widget
         self.dashboard = dashboard
 
+    def skips(self, record: logging.LogRecord) -> bool:
+        """Whether `record` stays out of the widget."""
+        if getattr(_emitting, "active", False):
+            return True
+
+        if any(_within(record.name, name) for name in self.widget.exclude):
+            return True
+
+        return threading.current_thread().name == RUNTIME_THREAD and _within(
+            record.name, SERVER_LOGGER
+        )
+
     def emit(self, record: logging.LogRecord) -> None:
-        if threading.current_thread().name == RUNTIME_THREAD:
+        if self.skips(record):
             return
 
         try:
@@ -39,39 +60,50 @@ class LogsHandler(logging.Handler):
             self.handleError(record)
             return
 
-        self.dashboard.emit(
-            self.widget.source,
-            time=record.created,
-            level=record.levelname,
-            levelno=record.levelno,
-            logger=record.name,
-            message=message,
-            _exception=(
-                FORMATTER.formatException(record.exc_info) if record.exc_info else None
-            ),
-        )
+        _emitting.active = True
+
+        try:
+            self.dashboard.emit(
+                self.widget.source,
+                time=record.created,
+                level=record.levelname,
+                levelno=record.levelno,
+                logger=record.name,
+                message=message,
+                _exception=(
+                    FORMATTER.formatException(record.exc_info)
+                    if record.exc_info
+                    else None
+                ),
+            )
+        finally:
+            _emitting.active = False
 
 
 @dataclass
 class Logs(Table):
     """The application's Python logs, newest first, live.
 
-    Adding the widget attaches a handler to its `logger`, removed when the
-    widget leaves the dashboard or the dashboard stops. Lines are events of
-    its source, and the newest `keep` stay in the event store, across restarts.
+    Adding the widget attaches a handler to its `include` loggers, removed
+    when the widget leaves the dashboard or the dashboard stops. Lines are
+    events of its source, and the newest `keep` stay in the event store,
+    across restarts.
 
     ## Example
 
     ```python
     with dachshund.row():
         dachshund.add(Logs("logs"))
-        dachshund.add(Logs("api_errors", logger="myapp.api", level="ERROR"))
+        dachshund.add(Logs("api_errors", include=["myapp.api"], level="ERROR"))
+        dachshund.add(Logs("quiet", exclude=["apscheduler", "httpx"]))
     ```
 
     ## Options
 
-    - `logger` (`str`) - The logger captured, with its children. Defaults to
-      `""`, every logger.
+    - `include` (`list[str]`) - Loggers captured, with their children.
+      Defaults to every logger.
+    - `exclude` (`list[str]`) - Loggers left out, with their children, each
+      under an included one. Defaults to none.
     - `level` (`str`) - The lowest level captured, like `"WARNING"`. Defaults
       to `"INFO"`.
     - `keep` (`int`) - Lines kept. Defaults to `500`.
@@ -81,8 +113,9 @@ class Logs(Table):
 
     _: KW_ONLY
 
-    logger: str = ""
+    include: list[str] = field(default_factory=list)
     level: str = "INFO"
+    exclude: list[str] = field(default_factory=list)
     keep: int = 500
     columns: list[str] = field(
         default_factory=lambda: ["time", "level", "logger", "message"]
@@ -116,6 +149,21 @@ class Logs(Table):
         if self.keep < 1:
             raise ValueError(f"{self.name!r} has keep={self.keep}, keep at least 1.")
 
+        if self.include:
+            stray = [
+                name
+                for name in self.exclude
+                if not any(
+                    name != parent and _within(name, parent) for parent in self.include
+                )
+            ]
+
+            if stray:
+                raise ValueError(
+                    f"{self.name!r} excludes {', '.join(stray)}, outside what it "
+                    "includes. Exclude only loggers under an included one."
+                )
+
     def raw_events(self) -> int | None:
         """Its newest `keep` lines."""
         return self.keep
@@ -124,31 +172,44 @@ class Logs(Table):
     def levelno(self) -> int:
         return LEVELS[self.level]
 
+    def captured(self) -> list[logging.Logger]:
+        """The loggers its handler attaches to."""
+        names = set(self.include) or {""}
+
+        return [
+            logging.getLogger(name or None)
+            for name in sorted(names)
+            if not any(other != name and _within(name, other) for other in names)
+        ]
+
     def bind(self, dashboard: "Dashboard") -> None:
-        """Attach this widget's handler to its logger."""
+        """Attach this widget's handler to its loggers."""
         if self.handler is not None:
             return
 
-        captured = logging.getLogger(self.logger or None)
         self.handler = LogsHandler(self, dashboard)
-        captured.addHandler(self.handler)
 
-        if captured.getEffectiveLevel() > self.levelno:
-            logger.warning(
-                "%r shows %s and up, but its logger %r only passes %s and up. "
-                "Lower the logger's level to see those lines.",
-                self.name,
-                self.level,
-                captured.name,
-                logging.getLevelName(captured.getEffectiveLevel()),
-            )
+        for captured in self.captured():
+            captured.addHandler(self.handler)
+
+            if captured.getEffectiveLevel() > self.levelno:
+                logger.warning(
+                    "%r shows %s and up, but its logger %r only passes %s and up. "
+                    "Lower the logger's level to see those lines.",
+                    self.name,
+                    self.level,
+                    captured.name,
+                    logging.getLevelName(captured.getEffectiveLevel()),
+                )
 
     def unbind(self) -> None:
-        """Detach this widget's handler from its logger."""
+        """Detach this widget's handler from its loggers."""
         if self.handler is None:
             return
 
-        logging.getLogger(self.logger or None).removeHandler(self.handler)
+        for captured in self.captured():
+            captured.removeHandler(self.handler)
+
         self.handler = None
 
     def render(self, events: Sequence[Event]) -> dict[str, Any]:
