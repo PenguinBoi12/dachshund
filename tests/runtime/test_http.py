@@ -298,7 +298,7 @@ async def test_index_with_the_builtin_charts__expect_one_shared_asset_pair() -> 
 
     types = ("timeseries", "line", "bar")
 
-    assert body.count("/_static/widgets/") == 2  # one script tag, one style tag
+    assert body.count("/_static/widgets/") == 2
     assert sum(body.count(f"/_static/widgets/{t}.js") for t in types) == 1
     assert sum(body.count(f"/_static/widgets/{t}.css") for t in types) == 1
 

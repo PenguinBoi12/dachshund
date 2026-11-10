@@ -58,20 +58,20 @@ For data that lives elsewhere, like users in a database, give the table a `loade
 from dachshund.widgets import Table, TableQuery
 
 
-async def load_users(ctx, query: TableQuery):
-    users = await ctx["db"].users(
+async def load_users(ctx: AppContext, query: TableQuery):
+    users = await ctx.db.users(
         search=query.search,
         order_by=query.sort_by,
         descending=query.descending,
         offset=query.offset,
         limit=query.limit,
     )
-    total = await ctx["db"].count_users(search=query.search)
+    total = await ctx.db.count_users(search=query.search)
 
     return [{"id": u.id, "name": u.name} for u in users], total
 
 
-dachshund.init("My service", context={"db": db})
+dachshund.init("My service", context=AppContext(db=db))
 
 with dachshund.row():
     dachshund.add(Table("users", columns=["id", "name"], loader=load_users))

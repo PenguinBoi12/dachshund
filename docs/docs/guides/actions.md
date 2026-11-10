@@ -25,8 +25,8 @@ An action used by a [Page](pages.md#pages)'s widgets is registered on the page, 
 
 ```python
 @overview_page.action("flush", label="Flush cache")
-def flush(ctx) -> None:
-    ctx["cache"].clear()
+def flush(ctx: AppContext) -> None:
+    ctx.cache.clear()
 ```
 
 ## Arguments
@@ -40,18 +40,26 @@ A handler can be sync or async. A sync handler runs in a thread, so it can block
 
 ## Context
 
-`ctx` is the `context` given to `dachshund.init()`. Put whatever a handler needs from your application in it.
+`ctx` is the `context` given to `dachshund.init()`. Put whatever a handler needs from your application in it. It can be any object, so a dataclass gives handlers typed access:
 
 ```python
-dachshund.init("My service", context={"db": db})
+from dataclasses import dataclass
+
+
+@dataclass
+class AppContext:
+    db: Database
+
+
+dachshund.init("My service", context=AppContext(db=db))
 
 
 @dachshund.action("deactivate")
-async def deactivate(ctx, user_id: str) -> None:
-    await ctx["db"].deactivate_user(int(user_id))
+async def deactivate(ctx: AppContext, user_id: str) -> None:
+    await ctx.db.deactivate_user(int(user_id))
 ```
 
-`ctx` defaults to `{}`. Calling `init()` again merges the new `context` into it.
+`ctx` defaults to `None`. Calling `init()` again replaces it with the new `context`.
 
 ## Event loop
 

@@ -70,12 +70,12 @@ def test_init_with_context__expect_it_set() -> None:
     assert dashboard.context == {"bot": "b"}
 
 
-def test_init_with_context_twice__expect_keys_merged() -> None:
+def test_init_with_context_twice__expect_it_replaced() -> None:
     dashboard = dachshund.init(port=0, path=":memory:", context={"bot": "b"})
     dachshund.shutdown()
     dachshund.init(port=0, path=":memory:", context={"db": "d"})
 
-    assert dashboard.context == {"bot": "b", "db": "d"}
+    assert dashboard.context == {"db": "d"}
 
 
 def test_init_with_another_address__expect_a_warning(

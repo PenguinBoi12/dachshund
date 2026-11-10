@@ -28,14 +28,15 @@ Here's an example structure:
 from dachshund import Page
 from dachshund.widgets import Number, Table, Text, TimeSeriesChart
 
+from myapp.context import AppContext
 from myapp.dashboard.loaders import load_users
 
 overview_page = Page("overview", title="Overview")
 
 
 @overview_page.action("deactivate", label="Deactivate", confirm=True)
-async def deactivate(ctx, id: str) -> None:
-    await ctx["db"].deactivate_user(int(id))
+async def deactivate(ctx: AppContext, id: str) -> None:
+    await ctx.db.deactivate_user(int(id))
 
 
 with overview_page.row():
@@ -76,16 +77,18 @@ Code shared by several pages, like a [table's loader](tables.md#rows-from-your-d
 # myapp/dashboard/loaders.py
 from dachshund.widgets import TableQuery
 
+from myapp.context import AppContext
 
-async def load_users(ctx, query: TableQuery):
-    users = await ctx["db"].users(
+
+async def load_users(ctx: AppContext, query: TableQuery):
+    users = await ctx.db.users(
         search=query.search,
         order_by=query.sort_by,
         descending=query.descending,
         offset=query.offset,
         limit=query.limit,
     )
-    total = await ctx["db"].count_users(search=query.search)
+    total = await ctx.db.count_users(search=query.search)
 
     return [{"id": u.id, "name": u.name, "email": u.email} for u in users], total
 ```
@@ -97,11 +100,12 @@ async def load_users(ctx, query: TableQuery):
 import dachshund
 from dachshund.storage import SQLiteStorage
 
+from myapp.context import AppContext
 from myapp.dashboard.pages.activity import activity_page
 from myapp.dashboard.pages.overview import overview_page
 
 
-def start_dashboard(context: dict) -> None:
+def start_dashboard(context: AppContext) -> None:
     dachshund.init(
         "My service",
         storage=SQLiteStorage("widget_state.db"),
@@ -116,9 +120,10 @@ Your application calls it once at startup:
 
 ```python
 # myapp/main.py
+from myapp.context import AppContext
 from myapp.dashboard.dashboard import start_dashboard
 
-start_dashboard(context)
+start_dashboard(AppContext(db=db))
 ```
 
 `context` is passed as `ctx` to every action and loader, see [Context](actions.md#context).
