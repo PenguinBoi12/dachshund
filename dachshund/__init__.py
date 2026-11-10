@@ -7,7 +7,6 @@ try:
 except PackageNotFoundError:
     from dachshund._version import version as __version__
 
-from dachshund.actions import Context
 from dachshund.layout import Column, Page, Row
 from dachshund.registry import (
     Dashboard,
@@ -25,7 +24,6 @@ from dachshund.registry import (
 
 __all__ = [
     "Column",
-    "Context",
     "Dashboard",
     "Page",
     "Row",

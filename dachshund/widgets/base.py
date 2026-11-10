@@ -4,7 +4,6 @@ from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Mapping, Sequence
 
-from dachshund.actions import Context
 from dachshund.storage.events import Bucket, Event
 from dachshund.widgets.query import TableQuery
 from dachshund.widgets.value import numeric
@@ -147,7 +146,7 @@ class Widget:
         self,
         events: Sequence[Event],
         query: TableQuery,
-        context: Context,
+        context: object,
         host_loop: asyncio.AbstractEventLoop | None = None,
     ) -> dict[str, Any]:
         """One page of this widget's rows, as `query` asks for.

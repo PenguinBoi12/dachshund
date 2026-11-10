@@ -105,7 +105,7 @@ def test_action_with_no_params_at_all__expect_type_error() -> None:
 def test_action_with_ctx_first__expect_it_registered() -> None:
     dashboard = Dashboard(path=":memory:")
 
-    dashboard.action("ping")(lambda ctx: None)  # no error
+    dashboard.action("ping")(lambda ctx: None)
 
     assert "ping" in dashboard.actions
 
@@ -171,7 +171,7 @@ async def test_run_action_with_an_async_handler__expect_its_result() -> None:
 @pytest.mark.asyncio
 async def test_run_action_with_context__expect_the_real_object() -> None:
     bot = object()
-    dashboard = Dashboard(path=":memory:", context={"bot": bot})
+    dashboard = Dashboard(path=":memory:", context=bot)
     seen = None
 
     async def handler(ctx) -> dict:
@@ -189,7 +189,7 @@ async def test_run_action_with_context__expect_the_real_object() -> None:
 
     assert response.status == 200
     assert body == {"ok": True, "result": {"ok": True}}
-    assert seen["bot"] is bot
+    assert seen is bot
 
 
 @pytest.mark.asyncio
@@ -416,15 +416,13 @@ def test_dashboard_start_without_a_running_loop__expect_no_host_loop() -> None:
         dashboard.stop()
 
 
-def test_dashboard_with_context__expect_it_kept() -> None:
+def test_dashboard_with_context__expect_the_same_object() -> None:
     sentinel = object()
-    assert Dashboard(path=":memory:", context={"bot": sentinel}).context == {
-        "bot": sentinel
-    }
+    assert Dashboard(path=":memory:", context=sentinel).context is sentinel
 
 
-def test_dashboard_without_context__expect_an_empty_dict() -> None:
-    assert Dashboard(path=":memory:").context == {}
+def test_dashboard_without_context__expect_none() -> None:
+    assert Dashboard(path=":memory:").context is None
 
 
 def test_action_card_without_args__expect_an_empty_dict() -> None:

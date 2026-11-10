@@ -5,7 +5,6 @@ from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Sequence
 
-from dachshund.actions import Context
 from dachshund.runtime.boot import RUNTIME_THREAD
 from dachshund.storage.events import Event
 from dachshund.widgets.query import TableQuery
@@ -223,7 +222,7 @@ class Logs(Table):
         self,
         events: Sequence[Event],
         query: TableQuery,
-        context: Context,
+        context: object,
         host_loop: asyncio.AbstractEventLoop | None = None,
     ) -> dict[str, Any]:
         """A page of lines, with the levels offered and the ones shown.

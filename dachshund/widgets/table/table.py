@@ -3,7 +3,7 @@ from dataclasses import KW_ONLY, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, ClassVar, Sequence
 
-from dachshund.actions import Context, run
+from dachshund.actions import run
 from dachshund.storage.events import Event
 from dachshund.widgets.query import TableQuery
 from dachshund.widgets.state import KeyedWidget
@@ -13,7 +13,7 @@ RESERVED = ("_delete",)
 PageResult = tuple[list[dict[str, Any]], int | None]
 
 
-Loader = Callable[[Context, TableQuery], PageResult | Awaitable[PageResult]]
+Loader = Callable[..., PageResult | Awaitable[PageResult]]
 
 
 def _sort_key(value: Any) -> tuple[int, Any]:
@@ -91,8 +91,8 @@ class Table(KeyedWidget):
     called every time a page is shown.
 
     ```python
-    def load_users(ctx, query):
-        users = ctx["db"].users(search=query.search, order_by=query.sort_by)
+    def load_users(ctx: AppContext, query: TableQuery) -> PageResult:
+        users = ctx.db.users(search=query.search, order_by=query.sort_by)
         page = users[query.offset : query.offset + query.limit]
 
         return page, len(users)
@@ -219,7 +219,7 @@ class Table(KeyedWidget):
         self,
         events: Sequence[Event],
         query: TableQuery,
-        context: Context,
+        context: object,
         host_loop: asyncio.AbstractEventLoop | None = None,
     ) -> dict[str, Any]:
         """One page of this table's rows, as `query` asks for.

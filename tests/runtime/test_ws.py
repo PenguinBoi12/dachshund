@@ -158,7 +158,7 @@ async def test_connect__expect_the_page_tracked_then_forgotten() -> None:
         async with client.ws_connect(WS_PATH):
             assert len(app[CLIENTS]) == 1
 
-        await client.get("/")  # Let the handler finish tidying up.
+        await client.get("/")
 
     assert app[CLIENTS] == {}
 

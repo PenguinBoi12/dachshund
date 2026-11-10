@@ -12,7 +12,7 @@ dachshund.init(
     port=1212,
     path="dachshund.db",
     storage=None,
-    context={},
+    context=None,
     authorize=None,
     login_url=None,
     timezone="UTC",

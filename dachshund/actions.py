@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, Any, Callable, Collection
 if TYPE_CHECKING:
     from dachshund.widgets.base import Widget
 
-Context = dict[str, Any]
-
 
 @dataclass
 class Action:
@@ -94,7 +92,7 @@ async def run(
 async def invoke(
     action: Action,
     kwargs: dict[str, Any],
-    context: Context,
+    context: object,
     host_loop: asyncio.AbstractEventLoop | None = None,
 ) -> Any:
     """Run `action`'s handler. `context` is always its first argument."""

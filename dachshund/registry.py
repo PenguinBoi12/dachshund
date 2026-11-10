@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from aiohttp import web
 
-from dachshund.actions import Action, Context, make_action
+from dachshund.actions import Action, make_action
 from dachshund.layout import DEFAULT_PAGE, Builder, Column, Page, Row
 from dachshund.runtime.boot import DEFAULT_HOST, DEFAULT_PORT, Runtime
 from dachshund.runtime.queue import EventQueue
@@ -62,8 +62,8 @@ class Dashboard:
       `"dachshund.db"`.
     - `storage` (`Storage`) - Where persisted widget state is saved, see
       [Storage](../reference/storage.md). Defaults to `None`.
-    - `context` (`dict`) - Passed as `ctx` to every action and table loader.
-      Defaults to `{}`.
+    - `context` (`object`) - Passed as `ctx` to every action and table loader.
+      Defaults to `None`.
     - `authorize` (`Callable`) - Called with a request for anything that
       isn't `public`, sync or async, returning whether to let it in. See
       [Authentication](../guides/authentication.md). Defaults to `None`,
@@ -89,7 +89,7 @@ class Dashboard:
         port: int = DEFAULT_PORT,
         path: str = DEFAULT_PATH,
         storage: Storage | None = None,
-        context: Context | None = None,
+        context: object = None,
         authorize: Authorize | None = None,
         login_url: str | None = None,
         login: Mapping[str, Handler] | None = None,
@@ -113,7 +113,7 @@ class Dashboard:
         self.events = EventStore(self._connection, self._executor)
 
         self.storage = storage
-        self.context: Context = dict(context) if context else {}
+        self.context = context
         self.authorize = authorize
         self.timezone = ZoneInfo(timezone)
 
@@ -436,7 +436,7 @@ def init(
     port: int = DEFAULT_PORT,
     path: str = DEFAULT_PATH,
     storage: Storage | None = None,
-    context: Context | None = None,
+    context: object = None,
     authorize: Authorize | None = None,
     login_url: str | None = None,
     login: Mapping[str, Handler] | None = None,
@@ -452,13 +452,13 @@ def init(
     ```python
     import dachshund
 
-    dachshund.init("Ada", description="Code Society's Matrix bot", context={"bot": bot})
+    dachshund.init("Ada", description="Code Society's Matrix bot", context=bot)
     ```
 
     ## Options
 
-    Takes the options of [Dashboard][dachshund.Dashboard]. `context` is merged
-    into the context already set.
+    Takes the options of [Dashboard][dachshund.Dashboard]. `context` replaces
+    the context already set.
     """
     dashboard = default(path=path, storage=storage)
 
@@ -512,7 +512,7 @@ def init(
             dashboard.description = description
 
         if context is not None:
-            dashboard.context.update(context)
+            dashboard.context = context
 
         if authorize is not None:
             dashboard.authorize = authorize
@@ -578,7 +578,7 @@ def action(
 
 
     @dachshund.action("block_user", label="Block", confirm=True)
-    def block_user(ctx: dachshund.Context, user_id: str) -> None: ...
+    def block_user(ctx: Bot, user_id: str) -> None: ...
     ```
     """
     return default().action(name, **kwargs)
