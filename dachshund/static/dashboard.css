@@ -40,6 +40,8 @@
 
   --control-height: 32px;
   --control-height-small: 26px;
+
+  --page-width: 1920px;
 }
 
 * {
@@ -93,7 +95,7 @@ body {
 }
 
 .page {
-  max-width: 1560px;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: 36px 40px 64px;
   /* `backwards`, not `both`: a transform still in effect after the fade would
@@ -240,7 +242,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 14px;
-  max-width: 1560px;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: 0 40px 40px;
   font-family: var(--font-mono);
